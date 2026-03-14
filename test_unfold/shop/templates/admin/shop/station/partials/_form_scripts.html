@@ -1,0 +1,40 @@
+<script>
+    (function () {
+        const editForm = document.getElementById('editStationForm');
+        if (!editForm) return;
+
+        // Find the original Django form and piggyback on it
+        const originalForm = document.getElementById('station_form');
+
+        editForm.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            if (!originalForm) {
+                alert('Không tìm thấy form gốc.');
+                return;
+            }
+
+            // Copy values from custom form to original form
+            const customInputs = editForm.querySelectorAll('input[name], select[name], textarea[name]');
+            customInputs.forEach(input => {
+                const originalInput = originalForm.querySelector(`[name="${input.name}"]`);
+                if (originalInput) {
+                    originalInput.value = input.value;
+                }
+            });
+
+            // Determine which submit button was clicked
+            const submitBtn = e.submitter;
+            if (submitBtn && submitBtn.name) {
+                // Add hidden input for the button name
+                const hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = submitBtn.name;
+                hidden.value = '1';
+                originalForm.appendChild(hidden);
+            }
+
+            originalForm.submit();
+        });
+    })();
+</script>   

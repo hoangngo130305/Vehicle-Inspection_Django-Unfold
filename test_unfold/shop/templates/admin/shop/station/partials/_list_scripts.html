@@ -1,0 +1,134 @@
+
+<!-- ======== Scripts ======== -->
+<script>
+    (function () {
+        const modal = document.getElementById('addStationModal');
+        const closeBtn = document.getElementById('closeModalBtn');
+        const cancelBtn = document.getElementById('cancelModalBtn');
+        const backdrop = document.getElementById('modalBackdrop');
+        const form = document.getElementById('addStationForm');
+        const addTrigger = document.getElementById('addStationTrigger');
+
+        // Open modal
+        addTrigger.addEventListener('click', function (e) {
+            e.preventDefault();
+            modal.style.display = 'block';
+            document.body.style.overflow = 'hidden';
+        });
+
+        function closeModal() {
+            modal.style.display = 'none';
+            document.body.style.overflow = '';
+            form.reset();
+            const errorMsgs = form.querySelectorAll('.field-error');
+            errorMsgs.forEach(el => el.remove());
+        }
+
+        closeBtn.addEventListener('click', closeModal);
+        cancelBtn.addEventListener('click', closeModal);
+        backdrop.addEventListener('click', closeModal);
+
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape' && modal.style.display === 'block') {
+                closeModal();
+            }
+        });
+
+        // Form submit via AJAX
+        form.addEventListener('submit', function (e) {
+            e.preventDefault();
+
+            const submitBtn = document.getElementById('submitStationBtn');
+            submitBtn.disabled = true;
+            submitBtn.textContent = 'Đang lưu...';
+            submitBtn.style.opacity = '0.7';
+
+            const formData = new FormData(form);
+
+            fetch(window.location.pathname + 'add-station-ajax/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+            })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        closeModal();
+                        window.location.reload();
+                    } else {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Lưu';
+                        submitBtn.style.opacity = '1';
+
+                        form.querySelectorAll('.field-error').forEach(el => el.remove());
+
+                        if (data.errors) {
+                            for (const [field, messages] of Object.entries(data.errors)) {
+                                const input = form.querySelector(`[name="${field}"]`);
+                                if (input) {
+                                    const errorDiv = document.createElement('div');
+                                    errorDiv.className = 'field-error';
+                                    errorDiv.style.cssText = 'color:#dc2626; font-size:12px; margin-top:4px;';
+                                    errorDiv.textContent = messages.join(', ');
+                                    input.parentNode.appendChild(errorDiv);
+                                    input.style.borderColor = '#dc2626';
+                                }
+                            }
+                        }
+
+                        if (data.message) {
+                            alert(data.message);
+                        }
+                    }
+                })
+                .catch(error => {
+                    submitBtn.disabled = false;
+                    submitBtn.textContent = 'Lưu';
+                    submitBtn.style.opacity = '1';
+                    alert('Có lỗi xảy ra. Vui lòng thử lại.');
+                });
+        });
+    })();
+
+    // Delete station function
+    function deleteStation(stationId, stationName) {
+        if (!confirm(`Bạn có chắc chắn muốn xóa trạm "${stationName}"?\nHành động này không thể hoàn tác.`)) {
+            return;
+        }
+
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        const formData = new FormData();
+        formData.append('station_id', stationId);
+        formData.append('csrfmiddlewaretoken', csrfToken);
+
+        fetch(window.location.pathname + 'delete-station-ajax/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+        })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // Animate row removal
+                    const row = document.querySelector(`tr[data-station-id="${stationId}"]`);
+                    if (row) {
+                        row.style.transition = 'all 0.3s ease';
+                        row.style.opacity = '0';
+                        row.style.transform = 'translateX(20px)';
+                        setTimeout(() => window.location.reload(), 350);
+                    } else {
+                        window.location.reload();
+                    }
+                } else {
+                    alert(data.message || 'Có lỗi xảy ra khi xóa trạm.');
+                }
+            })
+            .catch(error => {
+                alert('Có lỗi xảy ra. Vui lòng thử lại.');
+            });
+    }
+</script>

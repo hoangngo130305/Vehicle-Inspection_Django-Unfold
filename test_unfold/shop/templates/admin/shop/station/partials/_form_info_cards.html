@@ -1,0 +1,154 @@
+<!-- Info Cards Grid -->
+<div class="dk-info-grid">
+    <!-- Contact & Basic Info -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-blue">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path
+                        d="M22 16.92v3a2 2 0 01-2.18 2 19.79 19.79 0 01-8.63-3.07 19.5 19.5 0 01-6-6 19.79 19.79 0 01-3.07-8.67A2 2 0 014.11 2h3a2 2 0 012 1.72c.127.96.361 1.903.7 2.81a2 2 0 01-.45 2.11L8.09 9.91a16 16 0 006 6l1.27-1.27a2 2 0 012.11-.45c.907.338 1.85.573 2.81.7A2 2 0 0122 16.92z" />
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Thông tin liên hệ</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-info-row">
+                <div class="dk-info-label">Số điện thoại</div>
+                <div class="dk-info-value"><a href="tel:{{ original.phone }}">{{ original.phone }}</a></div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Email</div>
+                <div class="dk-info-value">
+                    {% if original.email %}
+                    <a href="mailto:{{ original.email }}">{{ original.email }}</a>
+                    {% else %}
+                    <span style="color:#9ca3af; font-style:italic;">Chưa cập nhật</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Địa chỉ</div>
+                <div class="dk-info-value">{{ original.address }}</div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Giờ làm việc</div>
+                <div class="dk-info-value">
+                    {% if original.open_time and original.close_time %}
+                    {{ original.open_time|time:"H:i" }} – {{ original.close_time|time:"H:i" }}
+                    {% elif original.working_hours %}
+                    {{ original.working_hours }}
+                    {% else %}
+                    <span style="color:#9ca3af; font-style:italic;">Chưa cập nhật</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Location Info -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-green">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                    <circle cx="12" cy="10" r="3" />
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Vị trí & Tọa độ</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-info-row">
+                <div class="dk-info-label">Latitude</div>
+                <div class="dk-info-value">{{ original.latitude|default:"-" }}</div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Longitude</div>
+                <div class="dk-info-value">{{ original.longitude|default:"-" }}</div>
+            </div>
+            {% if original.latitude and original.longitude %}
+            <div style="margin-top: 14px;">
+                <div class="dk-map-container">
+                    <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                        stroke-width="1.5">
+                        <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z" />
+                        <circle cx="12" cy="10" r="3" />
+                    </svg>
+                    <span style="font-size:13px;">Tọa độ: {{ original.latitude }}, {{ original.longitude }}</span>
+                    <a href="https://www.google.com/maps?q={{ original.latitude }},{{ original.longitude }}"
+                        target="_blank" class="dk-map-link">
+                        Xem trên Google Maps ↗
+                    </a>
+                </div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Capacity Info -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-purple">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
+                    <path d="M16 7V5a2 2 0 00-2-2h-4a2 2 0 00-2 2v2" />
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Công suất</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-stat-grid">
+                <div class="dk-stat-box">
+                    <div class="dk-stat-number">{{ original.capacity }}</div>
+                    <div class="dk-stat-label">Line kiểm định</div>
+                </div>
+                <div class="dk-stat-box">
+                    <div class="dk-stat-number">{{ original.daily_capacity }}</div>
+                    <div class="dk-stat-label">Xe / Ngày</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status & Time Info -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-orange">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Trạng thái & Thời gian</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-info-row">
+                <div class="dk-info-label">Trạng thái</div>
+                <div class="dk-info-value">
+                    {% if original.status == "active" %}
+                    <span
+                        style="display:inline-flex; align-items:center; gap:5px; background:#ecfdf5; color:#059669; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                        <span
+                            style="width:7px; height:7px; background:#10b981; border-radius:50%; display:inline-block;"></span>
+                        Hoạt động
+                    </span>
+                    {% else %}
+                    <span
+                        style="display:inline-flex; align-items:center; gap:5px; background:#fef2f2; color:#dc2626; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                        <span
+                            style="width:7px; height:7px; background:#ef4444; border-radius:50%; display:inline-block;"></span>
+                        Ngừng hoạt động
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Ngày tạo</div>
+                <div class="dk-info-value">{{ original.created_at|date:"d/m/Y H:i" }}</div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Cập nhật lần cuối</div>
+                <div class="dk-info-value">{{ original.updated_at|date:"d/m/Y H:i" }}</div>
+            </div>
+        </div>
+    </div>
+</div>

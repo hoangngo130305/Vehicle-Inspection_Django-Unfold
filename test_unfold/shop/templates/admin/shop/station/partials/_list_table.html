@@ -1,0 +1,71 @@
+
+<!-- Data Table -->
+<div class="dk-table-wrapper">
+    {% if stations_list %}
+    <table class="dk-table">
+        <thead>
+            <tr>
+                <th>ID</th>
+                <th>Tên trạm</th>
+                <th>Địa chỉ</th>
+                <th>Latitude</th>
+                <th>Longitude</th>
+                <th>Điện thoại</th>
+                <th>Trạng thái</th>
+                <th>Thao tác</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for station in stations_list %}
+            <tr data-station-id="{{ station.id }}">
+                <td class="dk-col-id">{{ forloop.counter }}</td>
+                <td class="dk-col-name">
+                    <a href="{{ station.id }}/change/">{{ station.station_name }}<br><small
+                            style="color:#6b7280; font-weight:400;">{{ station.station_code }}</small></a>
+                </td>
+                <td>{{ station.address }}</td>
+                <td>{{ station.latitude|default:"-" }}</td>
+                <td>{{ station.longitude|default:"-" }}</td>
+                <td class="dk-col-phone">
+                    <a href="tel:{{ station.phone }}">{{ station.phone }}</a>
+                </td>
+                <td>
+                    {% if station.status == "active" %}
+                    <span class="dk-badge dk-badge-active">Hoạt động</span>
+                    {% else %}
+                    <span class="dk-badge dk-badge-inactive">Ngừng hoạt động</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="dk-actions">
+                        <a href="{{ station.id }}/change/" class="dk-action-btn dk-action-edit" title="Chỉnh sửa">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                        </a>
+                        <button type="button" class="dk-action-btn dk-action-delete" title="Xóa"
+                            onclick="deleteStation({{ station.id }}, '{{ station.station_name|escapejs }}')">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <polyline points="3 6 5 6 21 6" />
+                                <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                                <line x1="10" y1="11" x2="10" y2="17" />
+                                <line x1="14" y1="11" x2="14" y2="17" />
+                            </svg>
+                        </button>
+                    </div>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <div class="dk-empty">
+        <div class="dk-empty-icon">📍</div>
+        <h3 class="dk-empty-title">Chưa có trạm đăng kiểm nào</h3>
+        <p class="dk-empty-desc">Nhấn "Thêm trạm" để bắt đầu thêm trạm vào hệ thống</p>
+    </div>
+    {% endif %}
+</div>

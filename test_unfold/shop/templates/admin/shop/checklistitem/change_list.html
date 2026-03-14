@@ -1,0 +1,514 @@
+{% extends "unfold/layouts/base.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="https://cdn.tailwindcss.com"></script>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Page Header -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Quản lý Checklist</h1>
+                <p class="text-gray-500 mt-1">Quản lý các mục kiểm tra an toàn và khí thải</p>
+            </div>
+            <button
+                id="btnAddChecklist"
+                class="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Thêm mục mới
+            </button>
+        </div>
+
+        <!-- Search -->
+        <div class="relative">
+            <svg class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input
+                type="text"
+                id="searchInput"
+                placeholder="Tìm kiếm mục checklist..."
+                class="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-4 gap-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Tổng số mục</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ total_items }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Đang hoạt động</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ active_items }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600">
+                        <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                        <circle cx="12" cy="13" r="4"></circle>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Yêu cầu ảnh</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ photo_required_items }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-600">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Không hoạt động</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ inactive_items }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Checklist Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">STT</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Key</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Mô tả</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Danh mục</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Yêu cầu ảnh</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Trạng thái</th>
+                        <th class="text-right px-6 py-4 text-sm font-semibold text-gray-700">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100" id="checklistTableBody">
+                    {% for item in checklist_items %}
+                    <tr class="hover:bg-gray-50 transition-colors" data-item-id="{{ item.id }}">
+                        <td class="px-6 py-4 text-sm text-gray-900">{{ forloop.counter }}</td>
+                        <td class="px-6 py-4">
+                            <code class="text-sm text-purple-600 bg-purple-50 px-2 py-1 rounded">{{ item.item_key }}</code>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-900">{{ item.item_label }}</td>
+                        <td class="px-6 py-4">
+                            {% if item.category == 'safety' %}
+                                <span class="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">An toàn</span>
+                            {% elif item.category == 'emission' %}
+                                <span class="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full font-medium">Khí thải</span>
+                            {% elif item.category == 'both' %}
+                                <span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">Cả hai</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if item.require_photo %}
+                                <span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium flex items-center gap-1 w-fit">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="20 6 9 17 4 12"></polyline>
+                                    </svg>
+                                    Có
+                                </span>
+                            {% else %}
+                                <span class="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded-full font-medium flex items-center gap-1 w-fit">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                                    </svg>
+                                    Không
+                                </span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if item.status == 'active' %}
+                                <span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">Hoạt động</span>
+                            {% else %}
+                                <span class="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded-full font-medium">Tắt</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <button
+                                    class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors btn-edit"
+                                    data-item-id="{{ item.id }}"
+                                    data-item-key="{{ item.item_key }}"
+                                    data-item-label="{{ item.item_label }}"
+                                    data-category="{{ item.category }}"
+                                    data-require-photo="{{ item.require_photo }}"
+                                    data-status="{{ item.status }}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                    </svg>
+                                </button>
+                                <button
+                                    class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors btn-delete"
+                                    data-item-id="{{ item.id }}"
+                                    data-item-label="{{ item.item_label }}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="7" class="px-6 py-12 text-center text-gray-500">
+                            Không có mục checklist nào
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Modal -->
+<div id="addModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Thêm mục checklist mới</h2>
+        
+        <form id="addForm">
+            {% csrf_token %}
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Key (mã định danh)</label>
+                    <input
+                        type="text"
+                        id="addItemKey"
+                        name="item_key"
+                        placeholder="VD: brake_system"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Mô tả</label>
+                    <input
+                        type="text"
+                        id="addItemLabel"
+                        name="item_label"
+                        placeholder="VD: Hệ thống phanh hoạt động tốt"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Danh mục kiểm tra</label>
+                    <select
+                        id="addCategory"
+                        name="category"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="safety">An toàn</option>
+                        <option value="emission">Khí thải</option>
+                        <option value="both">Cả hai</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input
+                        type="checkbox"
+                        id="addRequirePhoto"
+                        name="require_photo"
+                        checked
+                        class="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
+                    <label for="addRequirePhoto" class="text-sm font-medium text-gray-700 cursor-pointer">
+                        Yêu cầu chụp ảnh
+                    </label>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input
+                        type="checkbox"
+                        id="addActive"
+                        name="status"
+                        checked
+                        class="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
+                    <label for="addActive" class="text-sm font-medium text-gray-700 cursor-pointer">
+                        Kích hoạt ngay
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-6">
+                <button
+                    type="button"
+                    id="btnCancelAdd"
+                    class="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
+                    Hủy
+                </button>
+                <button
+                    type="submit"
+                    class="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors">
+                    Thêm mục
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Chỉnh sửa mục checklist</h2>
+        
+        <form id="editForm">
+            {% csrf_token %}
+            <input type="hidden" id="editItemId" name="item_id">
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Key (mã định danh)</label>
+                    <input
+                        type="text"
+                        id="editItemKey"
+                        name="item_key"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Mô tả</label>
+                    <input
+                        type="text"
+                        id="editItemLabel"
+                        name="item_label"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Danh mục kiểm tra</label>
+                    <select
+                        id="editCategory"
+                        name="category"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="safety">An toàn</option>
+                        <option value="emission">Khí thải</option>
+                        <option value="both">Cả hai</option>
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input
+                        type="checkbox"
+                        id="editRequirePhoto"
+                        name="require_photo"
+                        class="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
+                    <label for="editRequirePhoto" class="text-sm font-medium text-gray-700 cursor-pointer">
+                        Yêu cầu chụp ảnh
+                    </label>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input
+                        type="checkbox"
+                        id="editActive"
+                        name="status"
+                        class="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500">
+                    <label for="editActive" class="text-sm font-medium text-gray-700 cursor-pointer">
+                        Kích hoạt
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-6">
+                <button
+                    type="button"
+                    id="btnCancelEdit"
+                    class="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
+                    Hủy
+                </button>
+                <button
+                    type="submit"
+                    class="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors">
+                    Cập nhật
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const addModal = document.getElementById('addModal');
+    const editModal = document.getElementById('editModal');
+    const btnAddChecklist = document.getElementById('btnAddChecklist');
+    const btnCancelAdd = document.getElementById('btnCancelAdd');
+    const btnCancelEdit = document.getElementById('btnCancelEdit');
+    const addForm = document.getElementById('addForm');
+    const editForm = document.getElementById('editForm');
+    const searchInput = document.getElementById('searchInput');
+
+    // Show add modal
+    btnAddChecklist.addEventListener('click', () => {
+        addModal.classList.remove('hidden');
+    });
+
+    // Close add modal
+    btnCancelAdd.addEventListener('click', () => {
+        addModal.classList.add('hidden');
+        addForm.reset();
+    });
+
+    // Close edit modal
+    btnCancelEdit.addEventListener('click', () => {
+        editModal.classList.add('hidden');
+        editForm.reset();
+    });
+
+    // Close modals when clicking outside
+    [addModal, editModal].forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+            }
+        });
+    });
+
+    // Edit button click
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.getElementById('editItemId').value = this.dataset.itemId;
+            document.getElementById('editItemKey').value = this.dataset.itemKey;
+            document.getElementById('editItemLabel').value = this.dataset.itemLabel;
+            document.getElementById('editCategory').value = this.dataset.category;
+            document.getElementById('editRequirePhoto').checked = this.dataset.requirePhoto === 'True';
+            document.getElementById('editActive').checked = this.dataset.status === 'active';
+            editModal.classList.remove('hidden');
+        });
+    });
+
+    // Delete button click
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (confirm(`Bạn có chắc muốn xóa mục "${this.dataset.itemLabel}" không?`)) {
+                const formData = new FormData();
+                formData.append('item_id', this.dataset.itemId);
+                formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+                
+                fetch('delete-checklist-ajax/', {
+                    method: 'POST',
+                    body: formData,
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    if (data.success) window.location.reload();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Có lỗi xảy ra!');
+                });
+            }
+        });
+    });
+
+    // Add form submit
+    addForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(addForm);
+        if (!document.getElementById('addRequirePhoto').checked) {
+            formData.set('require_photo', 'false');
+        }
+        if (!document.getElementById('addActive').checked) {
+            formData.set('status', 'inactive');
+        } else {
+            formData.set('status', 'active');
+        }
+        
+        fetch('add-checklist-ajax/', {
+            method: 'POST',
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            if (data.success) window.location.reload();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Có lỗi xảy ra!');
+        });
+    });
+
+    // Edit form submit
+    editForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(editForm);
+        if (!document.getElementById('editRequirePhoto').checked) {
+            formData.set('require_photo', 'false');
+        }
+        if (!document.getElementById('editActive').checked) {
+            formData.set('status', 'inactive');
+        } else {
+            formData.set('status', 'active');
+        }
+        
+        fetch('update-checklist-ajax/', {
+            method: 'POST',
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            if (data.success) window.location.reload();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Có lỗi xảy ra!');
+        });
+    });
+
+    // Search functionality
+    searchInput.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        const rows = document.querySelectorAll('#checklistTableBody tr');
+        
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            if (text.includes(searchTerm)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    });
+});
+</script>
+{% endblock %}
