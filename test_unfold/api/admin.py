@@ -281,7 +281,7 @@ class VehicleAdmin(admin.ModelAdmin):
             'fields': ('chassis_number', 'engine_number')
         }),
         ('Đăng kiểm', {
-            'fields': ('inspection_expiry',)
+            'fields': ('registration_date', 'last_inspection_date', 'next_inspection_date')  # ✅ SỬA: Dùng đúng 3 fields có trong model
         }),
         ('Trạng thái', {
             'fields': ('status',)
@@ -299,9 +299,9 @@ class VehicleAdmin(admin.ModelAdmin):
     
     def get_inspection_status(self, obj):
         """Hiển thị trạng thái đăng kiểm"""
-        if obj.inspection_expiry:
+        if obj.next_inspection_date:  # ✅ ĐỔI TỪ inspection_expiry SANG next_inspection_date
             from datetime import date
-            days_left = (obj.inspection_expiry - date.today()).days
+            days_left = (obj.next_inspection_date - date.today()).days
             if days_left < 0:
                 return f"❌ Hết hạn ({abs(days_left)} ngày)"
             elif days_left <= 30:
