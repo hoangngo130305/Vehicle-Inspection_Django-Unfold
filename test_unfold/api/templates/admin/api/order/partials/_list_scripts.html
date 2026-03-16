@@ -1,0 +1,350 @@
+<!-- ======== Scripts for Staff Assignment ======== -->
+<script>
+    (function() {
+        'use strict';
+        
+        console.log('✅ Order Staff Assignment loaded');
+        
+        let staffListData = [];
+        let currentOrderId = null;
+        let currentOrderCode = null;
+        
+        // Wait for DOM ready
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', init);
+        } else {
+            init();
+        }
+        
+        function init() {
+            // Fetch staff list from Django API
+            fetchStaffList();
+            
+            // Create modal HTML
+            createModal();
+            
+            // Attach event listeners to assign buttons
+            attachAssignButtons();
+        }
+        
+        /**
+         * Fetch staff list from backend
+         */
+        function fetchStaffList() {
+            // ✅ Use Django Admin endpoint
+            fetch('/admin/api/order/get-staff-list/', {
+                method: 'GET',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+            })
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error('Failed to fetch staff list');
+                }
+                return response.json();
+            })
+            .then(data => {
+                console.log('✅ Staff list loaded from Django Admin:', data);
+                
+                // Ensure data is array
+                if (Array.isArray(data)) {
+                    staffListData = data;
+                } else {
+                    console.warn('⚠️ Response is not array, trying fallback');
+                    staffListData = [];
+                }
+                
+                console.log('📊 Total staff loaded:', staffListData.length);
+            })
+            .catch(error => {
+                console.error('❌ Error fetching staff list:', error);
+                staffListData = [];
+            });
+        }
+        
+        /**
+         * Create modal HTML and append to body
+         */
+        function createModal() {
+            const modalHTML = `
+                <div id="assignStaffModal" class="assign-modal-backdrop">
+                    <div class="assign-modal">
+                        <!-- Header -->
+                        <div class="assign-modal-header">
+                            <div>
+                                <h3>Phân công nhân viên</h3>
+                                <p id="modalOrderInfo">Đơn hàng: <span id="modalOrderCode">-</span></p>
+                            </div>
+                            <button type="button" class="assign-modal-close" onclick="closeAssignModal()">
+                                <svg width="20" height="20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        
+                        <!-- Body -->
+                        <div class="assign-modal-body">
+                            <label style="display: block; font-size: 14px; font-weight: 600; color: #374151; margin-bottom: 12px;">
+                                Danh sách nhân viên
+                            </label>
+                            <div id="staffListContainer" class="staff-list">
+                                <div class="staff-loading">
+                                    Đang tải danh sách nhân viên...
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Footer -->
+                        <div class="assign-modal-footer">
+                            <button type="button" class="modal-btn-secondary" onclick="closeAssignModal()">
+                                Đóng
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            
+            document.body.insertAdjacentHTML('beforeend', modalHTML);
+        }
+        
+        /**
+         * Attach click listeners to assign buttons
+         */
+        function attachAssignButtons() {
+            document.addEventListener('click', function(e) {
+                const btn = e.target.closest('[data-action="assign-staff"]');
+                if (btn) {
+                    e.preventDefault();
+                    const orderId = btn.dataset.orderId;
+                    const orderCode = btn.dataset.orderCode;
+                    openAssignModal(orderId, orderCode);
+                }
+            });
+        }
+        
+        /**
+         * Open assign modal
+         */
+        window.openAssignModal = function(orderId, orderCode) {
+            currentOrderId = orderId;
+            currentOrderCode = orderCode;
+            
+            const modal = document.getElementById('assignStaffModal');
+            const modalOrderCode = document.getElementById('modalOrderCode');
+            
+            modalOrderCode.textContent = orderCode;
+            modal.classList.add('show');
+            
+            // Render staff list
+            renderStaffList();
+        };
+        
+        /**
+         * Close assign modal
+         */
+        window.closeAssignModal = function() {
+            const modal = document.getElementById('assignStaffModal');
+            modal.classList.remove('show');
+            currentOrderId = null;
+            currentOrderCode = null;
+        };
+        
+        /**
+         * Render staff list in modal
+         */
+        function renderStaffList() {
+            const container = document.getElementById('staffListContainer');
+            
+            // ✅ Validate staffListData is array
+            if (!Array.isArray(staffListData)) {
+                console.error('❌ staffListData is not an array:', staffListData);
+                staffListData = [];
+            }
+            
+            if (staffListData.length === 0) {
+                container.innerHTML = '<div class="staff-empty">Không có nhân viên nào. Vui lòng thêm nhân viên trong mục Staff.</div>';
+                return;
+            }
+            
+            let html = '';
+            staffListData.forEach(staff => {
+                const isActive = staff.status === 'active';
+                const initial = staff.full_name ? staff.full_name.charAt(0).toUpperCase() : 'N';
+                const roleName = staff.role_name || staff.position || 'Nhân viên đăng kiểm';
+                const employeeCode = staff.employee_code || 'N/A';
+                
+                html += `
+                    <button 
+                        class="staff-item ${!isActive ? 'disabled' : ''}" 
+                        ${isActive ? `onclick="assignStaff(${staff.id}, '${escapeHtml(staff.full_name)}')"` : 'disabled'}
+                    >
+                        <div class="staff-item-content">
+                            <div class="staff-item-left">
+                                <div class="staff-avatar">${initial}</div>
+                                <div class="staff-info">
+                                    <div class="staff-name">${escapeHtml(staff.full_name)}</div>
+                                    <div class="staff-role">${escapeHtml(roleName)}</div>
+                                    <div class="staff-code">Mã: ${escapeHtml(employeeCode)}</div>
+                                </div>
+                            </div>
+                            <div>
+                                <span class="staff-status-badge ${isActive ? 'active' : 'inactive'}">
+                                    ${isActive ? '🟢 Hoạt động' : '🔴 Không hoạt động'}
+                                </span>
+                            </div>
+                        </div>
+                    </button>
+                `;
+            });
+            
+            container.innerHTML = html;
+        }
+        
+        /**
+         * Escape HTML to prevent XSS
+         */
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        /**
+         * Assign staff to order via AJAX
+         */
+        window.assignStaff = function(staffId, staffName) {
+            if (!currentOrderId) return;
+            
+            console.log(`Assigning staff ${staffId} to order ${currentOrderId}`);
+            
+            const formData = new FormData();
+            formData.append('staff_id', staffId);
+            formData.append('csrfmiddlewaretoken', getCsrfToken());
+            
+            fetch(`/admin/api/order/${currentOrderId}/assign-staff/`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest',
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    console.log('✅ Staff assigned successfully');
+                    
+                    // Show success message
+                    showToast('success', data.message || `Đã phân công ${staffName}`);
+                    
+                    // Close modal
+                    closeAssignModal();
+                    
+                    // Reload page to show updated data
+                    setTimeout(() => {
+                        window.location.reload();
+                    }, 1000);
+                } else {
+                    showToast('error', data.error || 'Có lỗi xảy ra');
+                }
+            })
+            .catch(error => {
+                console.error('❌ Error:', error);
+                showToast('error', 'Lỗi kết nối');
+            });
+        };
+        
+        /**
+         * Show toast notification
+         */
+        function showToast(type, message) {
+            // Create simple toast
+            const toast = document.createElement('div');
+            toast.style.cssText = `
+                position: fixed;
+                top: 20px;
+                right: 20px;
+                padding: 12px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: 500;
+                z-index: 10000;
+                animation: slideInRight 0.3s ease;
+                ${type === 'success' ? 'background: #10b981; color: white;' : 'background: #ef4444; color: white;'}
+            `;
+            toast.textContent = message;
+            
+            document.body.appendChild(toast);
+            
+            setTimeout(() => {
+                toast.style.animation = 'slideOutRight 0.3s ease';
+                setTimeout(() => toast.remove(), 300);
+            }, 3000);
+        }
+        
+        /**
+         * Get CSRF token
+         */
+        function getCsrfToken() {
+            let cookieValue = null;
+            if (document.cookie && document.cookie !== '') {
+                const cookies = document.cookie.split(';');
+                for (let i = 0; i < cookies.length; i++) {
+                    const cookie = cookies[i].trim();
+                    if (cookie.substring(0, 10) === 'csrftoken=') {
+                        cookieValue = decodeURIComponent(cookie.substring(10));
+                        break;
+                    }
+                }
+            }
+            
+            if (!cookieValue) {
+                const csrfInput = document.querySelector('[name=csrfmiddlewaretoken]');
+                if (csrfInput) {
+                    cookieValue = csrfInput.value;
+                }
+            }
+            
+            return cookieValue;
+        }
+        
+        // Close modal on ESC key
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeAssignModal();
+            }
+        });
+        
+        // Close modal on backdrop click
+        document.addEventListener('click', function(e) {
+            if (e.target.id === 'assignStaffModal') {
+                closeAssignModal();
+            }
+        });
+    })();
+</script>
+
+<style>
+    @keyframes slideInRight {
+        from {
+            opacity: 0;
+            transform: translateX(100px);
+        }
+        to {
+            opacity: 1;
+            transform: translateX(0);
+        }
+    }
+    
+    @keyframes slideOutRight {
+        from {
+            opacity: 1;
+            transform: translateX(0);
+        }
+        to {
+            opacity: 0;
+            transform: translateX(100px);
+        }
+    }
+</style>

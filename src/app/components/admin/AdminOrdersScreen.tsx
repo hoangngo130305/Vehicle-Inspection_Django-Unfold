@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   Search, 
   Filter, 
@@ -17,20 +17,11 @@ import {
 } from 'lucide-react';
 import AdminLayout from './AdminLayout';
 import { toast } from 'sonner';
+import { orderAPI, employeeAPI, type Order, type Employee, autoLogin, getToken } from '../../../lib/api'; // ✅ Using Employee type
 
-interface Order {
-  id: string;
-  customer: string;
-  phone: string;
-  vehicle: string;
-  vehicleType: string;
-  status: 'waiting' | 'processing' | 'completed' | 'cancelled';
-  assignedTo: string | null;
-  date: string;
-  time: string;
-  amount: string;
-  priority: 'high' | 'normal' | 'low';
-}
+// ✅ API Configuration - Using centralized API client from /src/lib/api.ts
+// No hardcoded URLs or tokens needed! Uses getToken() automatically.
+// ✅ Using Order & Employee types from api.ts - no local interface needed
 
 export default function AdminOrdersScreen() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -40,128 +31,79 @@ export default function AdminOrdersScreen() {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  const [showMoreMenu, setShowMoreMenu] = useState<string | null>(null);
+  const [showMoreMenu, setShowMoreMenu] = useState<number | null>(null); // ✅ CHANGED: number (order.id) instead of string
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 5;
   
   // Edit form states
-  const [editStatus, setEditStatus] = useState<'waiting' | 'processing' | 'completed' | 'cancelled'>('waiting');
-  const [editPriority, setEditPriority] = useState<'high' | 'normal' | 'low'>('normal');
+  const [editStatus, setEditStatus] = useState<'pending' | 'confirmed' | 'assigned' | 'in_progress' | 'completed' | 'cancelled'>('pending'); // ✅ FIXED: Match Django status
+  const [editPriority, setEditPriority] = useState<'high' | 'normal' | 'low' | 'urgent'>('normal'); // ✅ FIXED: Added 'urgent'
   const [editNote, setEditNote] = useState('');
 
-  // Mock data - CHANGED TO STATE
-  const [orders, setOrders] = useState<Order[]>([
-    {
-      id: 'DK001',
-      customer: 'Nguyễn Văn A',
-      phone: '0123456789',
-      vehicle: '30A-123.45',
-      vehicleType: 'Ô tô con',
-      status: 'waiting',
-      assignedTo: null,
-      date: '28/01/2026',
-      time: '08:30',
-      amount: '460.000đ',
-      priority: 'high',
-    },
-    {
-      id: 'DK002',
-      customer: 'Trần Thị B',
-      phone: '0987654321',
-      vehicle: '29B-678.90',
-      vehicleType: 'Ô tô con',
-      status: 'processing',
-      assignedTo: 'Lê Văn C',
-      date: '28/01/2026',
-      time: '09:00',
-      amount: '520.000đ',
-      priority: 'normal',
-    },
-    {
-      id: 'DK003',
-      customer: 'Phạm Thị D',
-      phone: '0369258147',
-      vehicle: '51F-234.56',
-      vehicleType: 'Xe tải',
-      status: 'completed',
-      assignedTo: 'Nguyễn Văn E',
-      date: '27/01/2026',
-      time: '14:00',
-      amount: '680.000đ',
-      priority: 'normal',
-    },
-    {
-      id: 'DK004',
-      customer: 'Hoàng Văn F',
-      phone: '0912345678',
-      vehicle: '40H-456.78',
-      vehicleType: 'Ô tô con',
-      status: 'waiting',
-      assignedTo: null,
-      date: '28/01/2026',
-      time: '10:30',
-      amount: '450.000đ',
-      priority: 'low',
-    },
-    {
-      id: 'DK005',
-      customer: 'Đỗ Thị G',
-      phone: '0834567891',
-      vehicle: '99X-789.01',
-      vehicleType: 'Xe máy',
-      status: 'processing',
-      assignedTo: 'Lê Văn C',
-      date: '28/01/2026',
-      time: '11:00',
-      amount: '180.000đ',
-      priority: 'normal',
-    },
-    {
-      id: 'DK006',
-      customer: 'Lý Văn H',
-      phone: '0945678123',
-      vehicle: '30A-456.78',
-      vehicleType: 'Ô tô con',
-      status: 'waiting',
-      assignedTo: null,
-      date: '29/01/2026',
-      time: '08:00',
-      amount: '490.000đ',
-      priority: 'normal',
-    },
-    {
-      id: 'DK007',
-      customer: 'Võ Thị K',
-      phone: '0956789234',
-      vehicle: '29B-234.56',
-      vehicleType: 'Ô tô con',
-      status: 'waiting',
-      assignedTo: null,
-      date: '29/01/2026',
-      time: '09:30',
-      amount: '510.000đ',
-      priority: 'high',
-    },
-  ]);
+  // ✅ FIXED: Use Employee type from API instead of local Staff interface
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [staffList, setStaffList] = useState<Employee[]>([]);
 
-  const staffList = [
-    { id: '1', name: 'Lê Văn C', available: true },
-    { id: '2', name: 'Nguyễn Văn E', available: true },
-    { id: '3', name: 'Trần Văn H', available: false },
-    { id: '4', name: 'Phạm Thị I', available: true },
-  ];
+  useEffect(() => {
+    // ✅ FIXED: Check token, if not exist, redirect to login (DO NOT auto-login)
+    const initializeData = async () => {
+      // 1. Check if we have a valid token
+      const existingToken = getToken();
+      if (!existingToken) {
+        console.warn('⚠️ [ADMIN ORDERS] No token found. User needs to login manually.');
+        toast.error('Vui lòng đăng nhập để xem dữ liệu', {
+          duration: 3000,
+        });
+        // ❌ DO NOT auto-login - it will fail with 401 if no user exists
+        // User should login manually via AuthScreen
+        return;
+      }
+
+      console.log('✅ [ADMIN ORDERS] Token found, fetching data...');
+
+      // 2. Fetch orders from API
+      try {
+        const response = await orderAPI.getOrders();
+        
+        // ✅ HANDLE BOTH: Direct array OR paginated response
+        const ordersList = Array.isArray(response) ? response : (response.results || []);
+        
+        console.log('✅ [ADMIN ORDERS] Orders loaded:', ordersList.length);
+        setOrders(ordersList);
+      } catch (error) {
+        console.error('❌ [ADMIN ORDERS] Error fetching orders:', error);
+        toast.error('Không thể tải đơn hàng');
+      }
+
+      // 3. Fetch staff list from API
+      try {
+        const response = await employeeAPI.getEmployees();
+        console.log('✅ [ADMIN ORDERS] Staff loaded:', response.length || 0);
+        setStaffList(response as any);
+      } catch (error) {
+        console.error('❌ [ADMIN ORDERS] Error fetching staff list:', error);
+        toast.error('Không thể tải danh sách nhân viên');
+      }
+    };
+
+    initializeData();
+  }, []);
 
   const getStatusBadge = (status: string) => {
     const styles = {
-      waiting: 'bg-orange-100 text-orange-700',
-      processing: 'bg-blue-100 text-blue-700',
+      pending: 'bg-yellow-100 text-yellow-700',
+      confirmed: 'bg-blue-100 text-blue-700',
+      assigned: 'bg-cyan-100 text-cyan-700',
+      in_progress: 'bg-purple-100 text-purple-700',
       completed: 'bg-green-100 text-green-700',
       cancelled: 'bg-red-100 text-red-700',
     };
     
     const labels = {
-      waiting: 'Chờ xử lý',
-      processing: 'Đang xử lý',
+      pending: 'Chờ xử lý',
+      confirmed: 'Đã xác nhận',
+      assigned: 'Đã phân công',
+      in_progress: 'Đang thực hiện',
       completed: 'Hoàn thành',
       cancelled: 'Đã hủy',
     };
@@ -178,12 +120,14 @@ export default function AdminOrdersScreen() {
       high: 'bg-red-100 text-red-700',
       normal: 'bg-gray-100 text-gray-700',
       low: 'bg-blue-100 text-blue-700',
+      urgent: 'bg-orange-100 text-orange-700',
     };
     
     const labels = {
       high: 'Cao',
       normal: 'Bình thường',
       low: 'Thấp',
+      urgent: 'Khẩn cấp',
     };
     
     return (
@@ -205,7 +149,7 @@ export default function AdminOrdersScreen() {
     if (selectedOrders.length === orders.length) {
       setSelectedOrders([]);
     } else {
-      setSelectedOrders(orders.map(o => o.id));
+      setSelectedOrders(orders.map(o => o.id.toString()));
     }
   };
 
@@ -216,33 +160,40 @@ export default function AdminOrdersScreen() {
 
   const handleEdit = (order: Order) => {
     setSelectedOrder(order);
-    setEditStatus(order.status);
-    setEditPriority(order.priority);
+    setEditStatus(order.status as 'pending' | 'confirmed' | 'assigned' | 'in_progress' | 'completed' | 'cancelled');
+    setEditPriority(order.priority as 'high' | 'normal' | 'low' | 'urgent');
     setEditNote('');
     setShowEditModal(true);
   };
 
-  const handleAssignStaff = (staffName: string) => {
+  const handleAssignStaff = (staffName: string, staffId: number) => {
     if (!selectedOrder) return;
     
-    // Update orders state
-    setOrders(prevOrders => 
-      prevOrders.map(o => 
-        o.id === selectedOrder.id 
-          ? { ...o, assignedTo: staffName, status: 'processing' as const }
-          : o
-      )
-    );
-    
-    toast.success(`Đã phân công cho ${staffName}`);
-    setShowAssignModal(false);
-    setSelectedOrder(null);
+    // ✅ Call real API to assign staff
+    orderAPI.assignStaff(selectedOrder.id, staffId)
+      .then((updatedOrder) => {
+        // ✅ Update local state with response from API
+        setOrders(prevOrders => 
+          prevOrders.map(o => 
+            o.id === selectedOrder.id ? updatedOrder : o
+          )
+        );
+        
+        toast.success(`Đã phân công cho ${staffName}`);
+        setShowAssignModal(false);
+        setSelectedOrder(null);
+      })
+      .catch((error) => {
+        console.error('❌ [ASSIGN STAFF] Error:', error);
+        toast.error(`Lỗi phân công: ${error.message}`);
+      });
   };
 
   const handleRandomAssign = () => {
     if (!selectedOrder) return;
     
-    const availableStaff = staffList.filter(s => s.available);
+    // ✅ FIXED: Use 'active' status instead of 'available'
+    const availableStaff = staffList.filter(s => s.status === 'active');
     if (availableStaff.length === 0) {
       toast.error('Không có nhân viên rảnh');
       return;
@@ -250,23 +201,23 @@ export default function AdminOrdersScreen() {
     
     const randomStaff = availableStaff[Math.floor(Math.random() * availableStaff.length)];
     
-    // Update orders state
+    // ✅ Update with correct API field names
     setOrders(prevOrders => 
       prevOrders.map(o => 
         o.id === selectedOrder.id 
-          ? { ...o, assignedTo: randomStaff.name, status: 'processing' as const }
+          ? { ...o, assigned_staff: randomStaff.id, staff_name: randomStaff.full_name, status: 'in_progress' as const } // ✅ FIXED: 'processing' → 'in_progress'
           : o
       )
     );
     
-    toast.success(`Đã phân công ngẫu nhiên cho ${randomStaff.name}`);
+    toast.success(`Đã phân công ngẫu nhiên cho ${randomStaff.full_name}`);
     setShowAssignModal(false);
     setSelectedOrder(null);
   };
 
   // Bulk random assignment
   const handleBulkRandomAssign = () => {
-    const availableStaff = staffList.filter(s => s.available);
+    const availableStaff = staffList.filter(s => s.status === 'active');
     if (availableStaff.length === 0) {
       toast.error('Không có nhân viên rảnh');
       return;
@@ -275,10 +226,10 @@ export default function AdminOrdersScreen() {
     let assignedCount = 0;
     setOrders(prevOrders => 
       prevOrders.map(o => {
-        if (selectedOrders.includes(o.id) && !o.assignedTo) {
+        if (selectedOrders.includes(o.id.toString()) && !o.assigned_staff) {
           const randomStaff = availableStaff[Math.floor(Math.random() * availableStaff.length)];
           assignedCount++;
-          return { ...o, assignedTo: randomStaff.name, status: 'processing' as const };
+          return { ...o, assigned_staff: randomStaff.id, staff_name: randomStaff.full_name, status: 'in_progress' as const }; // ✅ FIXED: 'processing' → 'in_progress'
         }
         return o;
       })
@@ -291,21 +242,21 @@ export default function AdminOrdersScreen() {
   const handleExport = () => {
     toast.info('Đang xuất dữ liệu...');
     
-    // Create CSV content
+    // ✅ Create CSV content with correct API field names
     const headers = ['Mã ĐH', 'Khách hàng', 'SĐT', 'Biển số', 'Loại xe', 'Trạng thái', 'Nhân viên', 'Ngày', 'Giờ', 'Số tiền'];
     const csvContent = [
       headers.join(','),
       ...orders.map(o => [
-        o.id,
-        o.customer,
-        o.phone,
-        o.vehicle,
-        o.vehicleType,
+        o.order_code,
+        o.customer_name,
+        o.customer_phone,
+        o.vehicle_plate,
+        o.vehicle_type || 'N/A',
         o.status,
-        o.assignedTo || 'Chưa phân công',
-        o.date,
-        o.time,
-        o.amount
+        o.staff_name || 'Chưa phân công',
+        o.appointment_date,
+        o.appointment_time,
+        o.estimated_amount
       ].join(','))
     ].join('\n');
 
@@ -379,10 +330,11 @@ export default function AdminOrdersScreen() {
   };
 
   const filteredOrders = orders.filter(order => {
+    // ✅ Use correct API flat field names
     const matchesSearch = 
-      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.customer.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.vehicle.toLowerCase().includes(searchQuery.toLowerCase());
+      order.order_code.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      order.vehicle_plate.toLowerCase().includes(searchQuery.toLowerCase());
     
     const matchesStatus = statusFilter === 'all' || order.status === statusFilter;
     
@@ -443,8 +395,10 @@ export default function AdminOrdersScreen() {
               className="px-4 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="all">Tất cả trạng thái</option>
-              <option value="waiting">Chờ xử lý</option>
-              <option value="processing">Đang xử lý</option>
+              <option value="pending">Chờ xử lý</option>
+              <option value="confirmed">Đã xác nhận</option>
+              <option value="assigned">Đã phân công</option>
+              <option value="in_progress">Đang thực hiện</option>
               <option value="completed">Hoàn thành</option>
               <option value="cancelled">Đã hủy</option>
             </select>
@@ -511,25 +465,25 @@ export default function AdminOrdersScreen() {
                     <td className="px-4 py-3">
                       <input
                         type="checkbox"
-                        checked={selectedOrders.includes(order.id)}
-                        onChange={() => handleSelectOrder(order.id)}
+                        checked={selectedOrders.includes(order.id.toString())}
+                        onChange={() => handleSelectOrder(order.id.toString())}
                         className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-2 focus:ring-blue-500"
                       />
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm font-semibold text-gray-900">{order.id}</span>
+                      <span className="text-sm font-semibold text-gray-900">{order.order_code}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div>
-                        <p className="text-sm font-medium text-gray-900">{order.customer}</p>
-                        <p className="text-xs text-gray-500">{order.phone}</p>
+                        <p className="text-sm font-medium text-gray-900">{order.customer_name}</p>
+                        <p className="text-xs text-gray-500">{order.customer_phone}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-900 font-mono">{order.vehicle}</span>
+                      <span className="text-sm text-gray-900 font-mono">{order.vehicle_plate}</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm text-gray-600">{order.vehicleType}</span>
+                      <span className="text-sm text-gray-600">{order.vehicle_type || 'N/A'}</span>
                     </td>
                     <td className="px-4 py-3">
                       {getStatusBadge(order.status)}
@@ -538,8 +492,8 @@ export default function AdminOrdersScreen() {
                       {getPriorityBadge(order.priority)}
                     </td>
                     <td className="px-4 py-3">
-                      {order.assignedTo ? (
-                        <span className="text-sm text-gray-900">{order.assignedTo}</span>
+                      {order.staff_name ? (
+                        <span className="text-sm text-gray-900">{order.staff_name}</span>
                       ) : (
                         <button
                           onClick={() => handleAssign(order)}
@@ -552,12 +506,12 @@ export default function AdminOrdersScreen() {
                     </td>
                     <td className="px-4 py-3">
                       <div>
-                        <p className="text-sm text-gray-900">{order.date}</p>
-                        <p className="text-xs text-gray-500">{order.time}</p>
+                        <p className="text-sm text-gray-900">{order.appointment_date}</p>
+                        <p className="text-xs text-gray-500">{order.appointment_time}</p>
                       </div>
                     </td>
                     <td className="px-4 py-3">
-                      <span className="text-sm font-semibold text-gray-900">{order.amount}</span>
+                      <span className="text-sm font-semibold text-gray-900">{order.estimated_amount}</span>
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-1 relative">
@@ -730,10 +684,10 @@ export default function AdminOrdersScreen() {
                     {staffList.map((staff) => (
                       <button
                         key={staff.id}
-                        onClick={() => handleAssignStaff(staff.name)}
-                        disabled={!staff.available}
+                        onClick={() => handleAssignStaff(staff.full_name, staff.id)}
+                        disabled={staff.status !== 'active'}
                         className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
-                          staff.available
+                          staff.status === 'active'
                             ? 'border-gray-200 hover:border-blue-600 hover:bg-blue-50 cursor-pointer'
                             : 'border-gray-200 bg-gray-50 cursor-not-allowed opacity-50'
                         }`}
@@ -741,20 +695,22 @@ export default function AdminOrdersScreen() {
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                              <span className="text-blue-600 font-bold text-sm">{staff.name.charAt(0)}</span>
+                              <span className="text-blue-600 font-bold text-sm">{staff.full_name.charAt(0)}</span>
                             </div>
                             <div>
-                              <p className="font-semibold text-gray-900">{staff.name}</p>
-                              <p className="text-xs text-gray-500">Nhân viên đăng kiểm</p>
+                              <p className="font-semibold text-gray-900">{staff.full_name}</p>
+                              <p className="text-xs text-gray-500">{staff.role_name || 'Nhân viên đăng kiểm'}</p>
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
                             <span className={`text-xs px-3 py-1.5 rounded-full font-semibold ${
-                              staff.available
+                              staff.status === 'active'
                                 ? 'bg-green-100 text-green-700'
-                                : 'bg-red-100 text-red-700'
+                                : staff.status === 'inactive'
+                                ? 'bg-red-100 text-red-700'
+                                : 'bg-yellow-100 text-yellow-700'
                             }`}>
-                              {staff.available ? '🟢 Rảnh' : '🔴 Bận'}
+                              {staff.status === 'active' ? '🟢 Hoạt động' : staff.status === 'inactive' ? '🔴 Không hoạt động' : '🟡 Nghỉ phép'}
                             </span>
                           </div>
                         </div>
@@ -792,10 +748,12 @@ export default function AdminOrdersScreen() {
                   <select
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value as 'waiting' | 'processing' | 'completed' | 'cancelled')}
+                    onChange={(e) => setEditStatus(e.target.value as 'pending' | 'confirmed' | 'assigned' | 'in_progress' | 'completed' | 'cancelled')}
                   >
-                    <option value="waiting">Chờ xử lý</option>
-                    <option value="processing">Đang xử lý</option>
+                    <option value="pending">Chờ xử lý</option>
+                    <option value="confirmed">Đã xác nhận</option>
+                    <option value="assigned">Đã phân công</option>
+                    <option value="in_progress">Đang thực hiện</option>
                     <option value="completed">Hoàn thành</option>
                     <option value="cancelled">Đã hủy</option>
                   </select>
@@ -807,11 +765,12 @@ export default function AdminOrdersScreen() {
                   <select
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
                     value={editPriority}
-                    onChange={(e) => setEditPriority(e.target.value as 'high' | 'normal' | 'low')}
+                    onChange={(e) => setEditPriority(e.target.value as 'high' | 'normal' | 'low' | 'urgent')}
                   >
                     <option value="high">Cao</option>
                     <option value="normal">Bình thường</option>
                     <option value="low">Thấp</option>
+                    <option value="urgent">Khẩn cấp</option>
                   </select>
                 </div>
                 <div>
@@ -868,19 +827,19 @@ export default function AdminOrdersScreen() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-700">Khách hàng:</p>
-                    <p className="text-sm text-gray-900">{selectedOrder.customer}</p>
+                    <p className="text-sm text-gray-900">{selectedOrder.customer_name}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-700">Số điện thoại:</p>
-                    <p className="text-sm text-gray-900">{selectedOrder.phone}</p>
+                    <p className="text-sm text-gray-900">{selectedOrder.customer_phone}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-700">Biển số xe:</p>
-                    <p className="text-sm text-gray-900 font-mono">{selectedOrder.vehicle}</p>
+                    <p className="text-sm text-gray-900 font-mono">{selectedOrder.vehicle_plate}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-700">Loại xe:</p>
-                    <p className="text-sm text-gray-900">{selectedOrder.vehicleType}</p>
+                    <p className="text-sm text-gray-900">{selectedOrder.vehicle_type || 'N/A'}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-700">Trạng thái:</p>
@@ -892,19 +851,19 @@ export default function AdminOrdersScreen() {
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-700">Nhân viên:</p>
-                    <p className="text-sm text-gray-900">{selectedOrder.assignedTo || 'Chưa phân công'}</p>
+                    <p className="text-sm text-gray-900">{selectedOrder.staff_name || 'Chưa phân công'}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-700">Ngày:</p>
-                    <p className="text-sm text-gray-900">{selectedOrder.date}</p>
+                    <p className="text-sm text-gray-900">{selectedOrder.appointment_date}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-700">Giờ:</p>
-                    <p className="text-sm text-gray-900">{selectedOrder.time}</p>
+                    <p className="text-sm text-gray-900">{selectedOrder.appointment_time}</p>
                   </div>
                   <div className="flex items-center justify-between">
                     <p className="text-sm font-medium text-gray-700">Số tiền:</p>
-                    <p className="text-sm text-gray-900 font-semibold">{selectedOrder.amount}</p>
+                    <p className="text-sm text-gray-900 font-semibold">{selectedOrder.estimated_amount}</p>
                   </div>
                 </div>
               </div>

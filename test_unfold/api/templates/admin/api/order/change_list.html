@@ -1,0 +1,12 @@
+{% extends "admin/change_list.html" %}
+{% load i18n %}
+
+{% block content %}
+
+{% include "admin/api/order/partials/_list_styles.html" %}
+
+{{ block.super }}
+
+{% include "admin/api/order/partials/_list_scripts.html" %}
+
+{% endblock %}

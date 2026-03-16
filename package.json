@@ -85,5 +85,17 @@
     "overrides": {
       "vite": "6.3.5"
     }
-  }
+  },
+  "description": "This is a code bundle for Vehicle Inspection App UI. The original project is available at https://www.figma.com/design/RRrmMt8KeN6QVu1Kp2XAcu/Vehicle-Inspection-App-UI.",
+  "main": "index.js",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hoangngo130305/Vehicle-Inspection_Django-Unfold.git"
+  },
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/hoangngo130305/Vehicle-Inspection_Django-Unfold/issues"
+  },
+  "homepage": "https://github.com/hoangngo130305/Vehicle-Inspection_Django-Unfold#readme"
 }

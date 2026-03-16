@@ -80,6 +80,7 @@ const mockUsers: Record<UserRole, User> = {
   },
 };
 
+// Named export for AuthProvider
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
 
@@ -131,6 +132,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 }
 
+// Named export for useAuth hook
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
@@ -138,3 +140,6 @@ export function useAuth() {
   }
   return context;
 }
+
+// Export types
+export type { User, Partner, AuthContextType };

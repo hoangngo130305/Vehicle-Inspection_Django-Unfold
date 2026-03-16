@@ -391,7 +391,7 @@ class VehicleReceiptLogInline(admin.StackedInline):
 class OrderAdmin(admin.ModelAdmin):
     list_display = [
         'id', 'order_code', 'get_vehicle_plate', 'get_customer_name', 
-        'station', 'get_staff_name', 'status', 'priority', 
+        'station', 'get_staff_assignment', 'status', 'priority', 
         'total_amount_display', 'appointment_date', 'created_at'
     ]
     list_filter = ['status', 'priority', 'inspection_result', 'station', 'created_at']
@@ -405,6 +405,12 @@ class OrderAdmin(admin.ModelAdmin):
     ]
     readonly_fields = ['order_code', 'created_at', 'updated_at', 'confirmed_at', 'cancelled_at']
     inlines = [VehicleReceiptLogInline, OrderStatusHistoryInline, OrderChecklistInline]
+    
+    # ✅ THÊM: Actions để bulk assign staff
+    actions = ['assign_staff_action']
+    
+    # ✅ THÊM: Custom template với inline CSS/JS
+    change_list_template = 'admin/api/order/change_list.html'
     
     fieldsets = (
         ('Mã đơn & Trạng thái', {
@@ -454,8 +460,38 @@ class OrderAdmin(admin.ModelAdmin):
     get_customer_name.short_description = 'Khách hàng'
     get_customer_name.admin_order_field = 'customer__full_name'
     
+    def get_staff_assignment(self, obj):
+        """✅ Hiển thị button phân công nhân viên theo design AdminOrdersScreen.tsx"""
+        from django.utils.html import format_html
+        
+        if obj.assigned_staff:
+            # Nếu đã có nhân viên được assign
+            return format_html(
+                '<span class="staff-assigned-text">{} ({})</span>',
+                obj.assigned_staff.full_name,
+                obj.assigned_staff.employee_code
+            )
+        else:
+            # Chưa assign, hiển thị button phân công
+            return format_html(
+                '''
+                <div class="staff-assignment-cell">
+                    <button type="button" data-action="assign-staff" data-order-id="{}" data-order-code="{}">
+                        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"></path>
+                        </svg>
+                        Phân công
+                    </button>
+                </div>
+                ''',
+                obj.id,
+                obj.order_code
+            )
+    get_staff_assignment.short_description = '👤 Nhân viên'
+    get_staff_assignment.allow_tags = True
+    
     def get_staff_name(self, obj):
-        """Hiển thị tên nhân viên"""
+        """Hiển thị tên nhân viên (dùng ở detail view)"""
         if obj.assigned_staff:
             return f"{obj.assigned_staff.full_name} ({obj.assigned_staff.employee_code})"
         return '⏳ Chưa phân công'
@@ -466,6 +502,101 @@ class OrderAdmin(admin.ModelAdmin):
         total = obj.estimated_amount + obj.additional_amount
         return f"{total:,.0f}đ"
     total_amount_display.short_description = 'Tổng tiền'
+    
+    # ✅ THÊM: Bulk action để assign staff
+    def assign_staff_action(self, request, queryset):
+        """Bulk action để assign staff cho nhiều orders"""
+        from django.contrib import messages
+        from django.shortcuts import render
+        
+        # Nếu đã submit form
+        if 'apply' in request.POST:
+            staff_id = request.POST.get('staff')
+            if staff_id:
+                staff = Staff.objects.get(id=staff_id)
+                count = queryset.update(assigned_staff=staff)
+                self.message_user(request, f'Đã phân công {staff.full_name} cho {count} đơn hàng')
+                return
+        
+        # Hiển thị form chọn staff
+        staff_list = Staff.objects.filter(status='active')
+        return render(request, 'admin/assign_staff_form.html', {
+            'orders': queryset,
+            'staff_list': staff_list,
+            'title': 'Phân công nhân viên cho các đơn đã chọn'
+        })
+    assign_staff_action.short_description = '👥 Phân công nhân viên'
+    
+    # ✅ THÊM: Custom URLs cho AJAX
+    def get_urls(self):
+        from django.urls import path
+        urls = super().get_urls()
+        custom_urls = [
+            path('<int:order_id>/assign-staff/', 
+                 self.admin_site.admin_view(self.assign_staff_ajax),
+                 name='order_assign_staff_ajax'),
+            path('get-staff-list/', 
+                 self.admin_site.admin_view(self.get_staff_list_ajax),
+                 name='order_get_staff_list_ajax'),
+        ]
+        return custom_urls + urls
+    
+    def assign_staff_ajax(self, request, order_id):
+        """✅ AJAX endpoint để assign staff"""
+        from django.http import JsonResponse
+        from django.views.decorators.http import require_POST
+        
+        if request.method == 'POST':
+            try:
+                # ✅ Sửa: Dùng request.POST thay vì JSON body
+                staff_id = request.POST.get('staff_id')
+                
+                order = Order.objects.get(id=order_id)
+                
+                if staff_id:
+                    staff = Staff.objects.get(id=staff_id)
+                    order.assigned_staff = staff
+                    order.save()
+                    
+                    return JsonResponse({
+                        'success': True,
+                        'message': f'Đã phân công {staff.full_name} cho đơn {order.order_code}'
+                    })
+                else:
+                    # Remove assignment
+                    order.assigned_staff = None
+                    order.save()
+                    return JsonResponse({
+                        'success': True,
+                        'message': f'Đã hủy phân công cho đơn {order.order_code}'
+                    })
+                    
+            except Exception as e:
+                return JsonResponse({
+                    'success': False,
+                    'error': str(e)
+                }, status=400)
+        
+        return JsonResponse({'success': False, 'error': 'Invalid request'}, status=400)
+    
+    def get_staff_list_ajax(self, request):
+        """✅ AJAX endpoint để lấy danh sách staff"""
+        from django.http import JsonResponse
+        
+        try:
+            # Lấy tất cả staff active
+            staff_list = Staff.objects.filter(status='active').values(
+                'id', 'full_name', 'employee_code', 'position', 'status'
+            )
+            
+            # Convert QuerySet to list
+            staff_data = list(staff_list)
+            
+            return JsonResponse(staff_data, safe=False)
+        except Exception as e:
+            return JsonResponse({
+                'error': str(e)
+            }, status=500)
 
 
 @admin.register(OrderStatusHistory)

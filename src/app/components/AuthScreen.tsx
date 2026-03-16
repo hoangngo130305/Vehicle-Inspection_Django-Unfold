@@ -1,65 +1,96 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router';
-import { LogIn, UserPlus, Phone, Lock, Mail, Eye, EyeOff } from 'lucide-react';
+import { LogIn, UserPlus, Phone, Lock, Mail, Eye, EyeOff, User } from 'lucide-react';
 import { toast } from 'sonner';
-import { useAuth } from '@/app/contexts/AuthContext';
+import { useAuth } from '../contexts';
+import { authAPI } from '../../lib/api';
 
 interface AuthScreenProps {
   onLoginSuccess: () => void;
 }
 
 type AuthMode = 'login' | 'register';
+type UserType = 'customer' | 'staff' | 'admin';
 
 export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
   const navigate = useNavigate();
   const { login } = useAuth();
   const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [userType, setUserType] = useState<UserType>('customer');
+  
+  // Customer fields
   const [phoneNumber, setPhoneNumber] = useState('');
-  const [password, setPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
-  const [registerStep, setRegisterStep] = useState<'phone' | 'otp' | 'password'>('phone');
+  const [fullName, setFullName] = useState('');
   const [otp, setOtp] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [debugOtp, setDebugOtp] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  
+  // Staff/Admin fields
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  
+  // UI states
+  const [loading, setLoading] = useState(false);
+  const [registerStep, setRegisterStep] = useState<'phone' | 'otp' | 'password'>('phone');
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [partnerCode, setPartnerCode] = useState('');
   const [showPartnerInput, setShowPartnerInput] = useState(false);
 
-  const handleSocialLogin = (provider: string) => {
-    toast.success(`Đang đăng nhập với ${provider}...`);
-    setTimeout(() => {
-      login('user', partnerCode || undefined);
-      navigate('/');
-    }, 1000);
-  };
+  // Login response display
+  const [loginResponse, setLoginResponse] = useState<any>(null);
+  const [showResponse, setShowResponse] = useState(false);
 
-  const handlePhoneLogin = () => {
-    if (!phoneNumber || !password) {
-      toast.error('Vui lòng nhập đầy đủ thông tin');
-      return;
-    }
-    toast.success('Đăng nhập thành công!');
-    login('user', partnerCode || undefined);
-    navigate('/');
-  };
+  // ============================================================
+  // CUSTOMER AUTH - OTP Based
+  // ============================================================
 
-  const handleRoleLogin = (role: 'staff' | 'admin') => {
-    login(role);
-    const roleName = role === 'staff' ? 'Nhân viên' : 'Quản trị';
-    toast.success(`Đăng nhập với vai trò ${roleName}`);
-    if (role === 'staff') {
-      navigate('/staff');
-    } else {
-      navigate('/admin/orders');
-    }
-  };
-
-  const handleSendOTP = () => {
+  const handleSendOTP = async () => {
     if (!phoneNumber) {
       toast.error('Vui lòng nhập số điện thoại');
       return;
     }
-    setRegisterStep('otp');
-    toast.success('Mã OTP đã được gửi đến ' + phoneNumber);
+
+    try {
+      setLoading(true);
+      const response = await authAPI.customerRequestOTP({
+        phone: phoneNumber,
+        purpose: authMode === 'register' ? 'register' : 'login',
+      });
+
+      setOtpSent(true);
+      if (response.debug_otp) {
+        setDebugOtp(response.debug_otp);
+        setOtp(response.debug_otp);
+      }
+      
+      toast.success(response.message);
+      
+      if (authMode === 'register') {
+        setRegisterStep('otp');
+      }
+    } catch (err: any) {
+      // ✅ Handle validation errors properly
+      const errorMessage = err.message || 'Gửi OTP thất bại';
+      
+      // Check if error contains phone validation message
+      if (errorMessage.includes('chưa được đăng ký')) {
+        toast.error(errorMessage, {
+          duration: 4000,
+          description: 'Vui lòng chuyển sang tab "Đăng ký" để tạo tài khoản mới.'
+        });
+      } else if (errorMessage.includes('đã được đăng ký')) {
+        toast.error(errorMessage, {
+          duration: 4000,
+          description: 'Vui lòng chuyển sang tab "Đăng nhập".'
+        });
+      } else {
+        toast.error(errorMessage);
+      }
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleVerifyOTP = () => {
@@ -67,26 +98,143 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
       toast.error('Vui lòng nhập mã OTP 6 chữ số');
       return;
     }
-    setRegisterStep('password');
-    toast.success('Xác thực thành công!');
+    
+    if (authMode === 'register') {
+      // Next step: ask for full name
+      setRegisterStep('password');
+      toast.success('Xác thực thành công!');
+    }
   };
 
-  const handleRegister = () => {
-    if (!password || !confirmPassword) {
-      toast.error('Vui lòng nhập mật khẩu');
+  const handleCustomerLogin = async () => {
+    if (!phoneNumber || !password) {
+      toast.error('Vui lòng nhập số điện thoại và mật khẩu');
       return;
     }
-    if (password !== confirmPassword) {
-      toast.error('Mật khẩu không khớp');
+
+    try {
+      setLoading(true);
+      const response = await authAPI.customerLogin({
+        phone: phoneNumber,
+        password: password,
+      });
+
+      toast.success('Đăng nhập thành công!');
+    } catch (err: any) {
+      toast.error(err.message || 'Đăng nhập thất bại');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCustomerRegister = async () => {
+    if (!phoneNumber || !otp || !fullName || !password) {
+      toast.error('Vui lòng điền đầy đủ thông tin');
       return;
     }
-    if (password.length < 6) {
-      toast.error('Mật khẩu phải có ít nhất 6 ký tự');
+
+    try {
+      setLoading(true);
+      const response = await authAPI.customerRegister({
+        phone: phoneNumber,
+        otp_code: otp,
+        full_name: fullName,
+        password: password,
+      });
+
+      toast.success('Đăng ký thành công!');
+    } catch (err: any) {
+      toast.error(err.message || 'Đăng ký thất bại');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================================
+  // STAFF AUTH - Phone/Password
+  // ============================================================
+
+  const handleStaffLogin = async () => {
+    if (!phoneNumber || !password) {
+      toast.error('Vui lòng nhập số điện thoại và mật khẩu');
       return;
     }
-    toast.success('Đăng ký thành công!');
-    login('user');
-    navigate('/');
+
+    try {
+      setLoading(true);
+      const response = await authAPI.staffLogin({
+        phone: phoneNumber,
+        password,
+      });
+
+      toast.success('Đăng nhập thành công!');
+    } catch (err: any) {
+      toast.error(err.message || 'Đăng nhập thất bại');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================================
+  // ADMIN AUTH - Username/Password
+  // ============================================================
+
+  const handleAdminLogin = async () => {
+    if (!username || !password) {
+      toast.error('Vui lòng nhập tên đăng nhập và mật khẩu');
+      return;
+    }
+
+    try {
+      setLoading(true);
+      const response = await authAPI.adminLogin({
+        username,
+        password,
+      });
+
+      // ✅ Set auth state FIRST - React Router will auto-redirect based on role
+      login('admin');
+      
+      toast.success('Đăng nhập Admin thành công!');
+      
+      // ✅ React Router will automatically redirect to /admin/orders when user.role === 'admin'
+      // No need for window.location.href - App.tsx routes handle it
+      
+    } catch (err: any) {
+      toast.error(err.message || 'Đăng nhập thất bại');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // ============================================================
+  // SOCIAL LOGIN (Placeholder)
+  // ============================================================
+
+  const handleSocialLogin = (provider: string) => {
+    toast.info(`Đăng nhập ${provider}: Chức năng đang phát triển`);
+  };
+
+  // ============================================================
+  // ROLE SELECTION (Staff/Admin shortcuts)
+  // ============================================================
+
+  const handleRoleLogin = (role: 'staff' | 'admin' | 'customer') => {
+    setUserType(role);
+    setAuthMode('login');
+    // Clear all fields when switching roles
+    setPhoneNumber('');
+    setPassword('');
+    setUsername('');
+    setOtp('');
+    setOtpSent(false);
+    
+    const roleNames = {
+      customer: 'Khách hàng',
+      staff: 'Nhân viên',
+      admin: 'Quản trị'
+    };
+    toast.info(`Chuyển sang đăng nhập ${roleNames[role]}`);
   };
 
   return (
@@ -146,108 +294,251 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
         <div className="bg-white rounded-2xl shadow-2xl p-5 space-y-4 backdrop-blur-xl">
           {authMode === 'login' && (
             <>
+              {/* Show current role badge */}
+              {userType !== 'customer' && (
+                <div className="flex items-center justify-between mb-2">
+                  <div className={`px-3 py-1.5 rounded-lg text-xs font-semibold ${
+                    userType === 'staff' 
+                      ? 'bg-green-100 text-green-700' 
+                      : 'bg-purple-100 text-purple-700'
+                  }`}>
+                    {userType === 'staff' ? '🧑‍💼 Nhân viên' : '👨‍💻 Quản trị'}
+                  </div>
+                  <button
+                    onClick={() => handleRoleLogin('customer')}
+                    className="text-xs text-blue-600 hover:text-blue-700 font-medium"
+                  >
+                    ← Quay lại
+                  </button>
+                </div>
+              )}
+
               <h3 className="text-base font-bold text-gray-800 text-center mb-3">
-                Chọn phương thức đăng nhập
+                {userType === 'customer' 
+                  ? 'Chọn phương thức đăng nhập' 
+                  : `Đăng nhập ${userType === 'staff' ? 'Nhân viên' : 'Quản trị'}`
+                }
               </h3>
               
-              {/* Social Login Buttons */}
-              <div className="space-y-2.5">
-                <button
-                  onClick={() => handleSocialLogin('Google')}
-                  className="w-full flex items-center justify-center gap-2.5 bg-white border-2 border-gray-200 hover:border-gray-300 hover:shadow-md rounded-xl py-3 transition-all active:scale-98"
-                >
-                  <svg className="w-5 h-5" viewBox="0 0 24 24">
-                    <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
-                    <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
-                    <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
-                    <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
-                  </svg>
-                  <span className="font-semibold text-gray-700 text-sm">Google</span>
-                </button>
-
-                <button
-                  onClick={() => handleSocialLogin('Facebook')}
-                  className="w-full flex items-center justify-center gap-2.5 bg-[#1877F2] hover:bg-[#166FE5] hover:shadow-md rounded-xl py-3 transition-all active:scale-98"
-                >
-                  <svg className="w-5 h-5" fill="white" viewBox="0 0 24 24">
-                    <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
-                  </svg>
-                  <span className="font-semibold text-white text-sm">Facebook</span>
-                </button>
-
-                <button
-                  onClick={() => handleSocialLogin('Apple')}
-                  className="w-full flex items-center justify-center gap-2.5 bg-black hover:bg-gray-900 hover:shadow-md rounded-xl py-3 transition-all active:scale-98"
-                >
-                  <svg className="w-5 h-5" fill="white" viewBox="0 0 24 24">
-                    <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
-                  </svg>
-                  <span className="font-semibold text-white text-sm">Apple</span>
-                </button>
-              </div>
-
-              {/* Divider */}
-              <div className="relative my-4">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-200"></div>
-                </div>
-                <div className="relative flex justify-center text-xs">
-                  <span className="px-3 bg-white text-gray-500 font-medium">Hoặc SĐT + Mật khẩu</span>
-                </div>
-              </div>
-
-              {/* Phone + Password Login */}
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                    Số điện thoại
-                  </label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                    <input
-                      type="tel"
-                      value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
-                      placeholder="Nhập số điện thoại"
-                      className="w-full pl-10 pr-3 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                    Mật khẩu
-                  </label>
-                  <div className="relative">
-                    <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Nhập mật khẩu"
-                      className="w-full pl-10 pr-10 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                    />
+              {/* CUSTOMER LOGIN */}
+              {userType === 'customer' && (
+                <>
+                  {/* Social Login Buttons */}
+                  <div className="space-y-2.5">
                     <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                      onClick={() => handleSocialLogin('Google')}
+                      className="w-full flex items-center justify-center gap-2.5 bg-white border-2 border-gray-200 hover:border-gray-300 hover:shadow-md rounded-xl py-3 transition-all active:scale-98"
                     >
-                      {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                      <svg className="w-5 h-5" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+                      </svg>
+                      <span className="font-semibold text-gray-700 text-sm">Google</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleSocialLogin('Facebook')}
+                      className="w-full flex items-center justify-center gap-2.5 bg-[#1877F2] hover:bg-[#166FE5] hover:shadow-md rounded-xl py-3 transition-all active:scale-98"
+                    >
+                      <svg className="w-5 h-5" fill="white" viewBox="0 0 24 24">
+                        <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+                      </svg>
+                      <span className="font-semibold text-white text-sm">Facebook</span>
+                    </button>
+
+                    <button
+                      onClick={() => handleSocialLogin('Apple')}
+                      className="w-full flex items-center justify-center gap-2.5 bg-black hover:bg-gray-900 hover:shadow-md rounded-xl py-3 transition-all active:scale-98"
+                    >
+                      <svg className="w-5 h-5" fill="white" viewBox="0 0 24 24">
+                        <path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/>
+                      </svg>
+                      <span className="font-semibold text-white text-sm">Apple</span>
                     </button>
                   </div>
-                </div>
 
-                <button
-                  onClick={handlePhoneLogin}
-                  className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 rounded-xl font-semibold text-sm shadow-lg hover:shadow-xl active:scale-98 transition-all"
-                >
-                  Đăng nhập
-                </button>
+                  {/* Divider */}
+                  <div className="relative my-4">
+                    <div className="absolute inset-0 flex items-center">
+                      <div className="w-full border-t border-gray-200"></div>
+                    </div>
+                    <div className="relative flex justify-center text-xs">
+                      <span className="px-3 bg-white text-gray-500 font-medium">Hoặc SĐT + Mật khẩu</span>
+                    </div>
+                  </div>
 
-                <button className="w-full text-blue-600 text-xs font-semibold hover:text-blue-700 transition-colors">
-                  Quên mật khẩu?
-                </button>
-              </div>
+                  {/* Phone + Password Login */}
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        Số điện thoại
+                      </label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input
+                          type="tel"
+                          value={phoneNumber}
+                          onChange={(e) => setPhoneNumber(e.target.value)}
+                          placeholder="Nhập số điện thoại"
+                          className="w-full pl-10 pr-3 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        Mật khẩu
+                      </label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Nhập mật khẩu"
+                          className="w-full pl-10 pr-10 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleCustomerLogin}
+                      disabled={loading}
+                      className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 rounded-xl font-semibold text-sm shadow-lg hover:shadow-xl active:scale-98 transition-all disabled:opacity-50"
+                    >
+                      {loading ? 'Đang đăng nhập...' : 'Đăng nhập'}
+                    </button>
+
+                    <button className="w-full text-blue-600 text-xs font-semibold hover:text-blue-700 transition-colors">
+                      Quên mật khẩu?
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* STAFF LOGIN */}
+              {userType === 'staff' && (
+                <>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        Số điện thoại
+                      </label>
+                      <div className="relative">
+                        <Phone className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input
+                          type="tel"
+                          value={phoneNumber}
+                          onChange={(e) => setPhoneNumber(e.target.value)}
+                          placeholder="Nhập số điện thoại"
+                          className="w-full pl-10 pr-3 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        Mật khẩu
+                      </label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Nhập mật khẩu"
+                          className="w-full pl-10 pr-10 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleStaffLogin}
+                      className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 rounded-xl font-semibold text-sm shadow-lg hover:shadow-xl active:scale-98 transition-all"
+                    >
+                      Đăng nhập
+                    </button>
+
+                    <button className="w-full text-blue-600 text-xs font-semibold hover:text-blue-700 transition-colors">
+                      Quên mật khẩu?
+                    </button>
+                  </div>
+                </>
+              )}
+
+              {/* ADMIN LOGIN */}
+              {userType === 'admin' && (
+                <>
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        Tên đăng nhập Admin
+                      </label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input
+                          type="text"
+                          value={username}
+                          onChange={(e) => setUsername(e.target.value)}
+                          placeholder="Nhập tên đăng nhập"
+                          className="w-full pl-10 pr-3 py-2.5 text-sm border-2 border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        Mật khẩu
+                      </label>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input
+                          type={showPassword ? 'text' : 'password'}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Nhập mật khẩu"
+                          className="w-full pl-10 pr-10 py-2.5 text-sm border-2 border-purple-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
+                        >
+                          {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={handleAdminLogin}
+                      disabled={loading}
+                      className="w-full bg-gradient-to-r from-purple-600 to-purple-700 hover:from-purple-700 hover:to-purple-800 text-white py-3 rounded-xl font-semibold text-sm shadow-lg hover:shadow-xl active:scale-98 transition-all disabled:opacity-50"
+                    >
+                      {loading ? 'Đang đăng nhập...' : 'Đăng nhập với quyền Admin'}
+                    </button>
+
+                    <div className="text-xs text-gray-500 text-center mt-3">
+                      🔐 Chỉ dành cho quản trị viên hệ thống
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
 
@@ -375,8 +666,24 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                 </>
               ) : (
                 <>
-                  {/* Password Registration */}
+                  {/* Full Name + Password for Registration */}
                   <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
+                        Họ và tên
+                      </label>
+                      <div className="relative">
+                        <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+                        <input
+                          type="text"
+                          value={fullName}
+                          onChange={(e) => setFullName(e.target.value)}
+                          placeholder="Nhập họ và tên"
+                          className="w-full pl-10 pr-3 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+                        />
+                      </div>
+                    </div>
+
                     <div>
                       <label className="block text-xs font-semibold text-gray-700 mb-1.5">
                         Mật khẩu
@@ -387,7 +694,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                           type={showPassword ? 'text' : 'password'}
                           value={password}
                           onChange={(e) => setPassword(e.target.value)}
-                          placeholder="Nhập mật khẩu"
+                          placeholder="Tối thiểu 6 ký tự"
                           className="w-full pl-10 pr-10 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
                         />
                         <button
@@ -400,34 +707,12 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                       </div>
                     </div>
 
-                    <div>
-                      <label className="block text-xs font-semibold text-gray-700 mb-1.5">
-                        Xác nhận mật khẩu
-                      </label>
-                      <div className="relative">
-                        <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-                        <input
-                          type={showConfirmPassword ? 'text' : 'password'}
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          placeholder="Xác nhận mật khẩu"
-                          className="w-full pl-10 pr-10 py-2.5 text-sm border-2 border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 transition-colors"
-                        >
-                          {showConfirmPassword ? <EyeOff size={18} /> : <Eye size={18} />}
-                        </button>
-                      </div>
-                    </div>
-
                     <button
-                      onClick={handleRegister}
-                      className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 rounded-xl font-semibold text-sm shadow-lg hover:shadow-xl active:scale-98 transition-all"
+                      onClick={handleCustomerRegister}
+                      disabled={loading}
+                      className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white py-3 rounded-xl font-semibold text-sm shadow-lg hover:shadow-xl active:scale-98 transition-all disabled:opacity-50"
                     >
-                      Xác nhận
+                      {loading ? 'Đang đăng ký...' : 'Hoàn tất đăng ký'}
                     </button>
 
                     <button
@@ -437,7 +722,7 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
                       }}
                       className="w-full text-blue-600 text-xs font-semibold hover:text-blue-700 transition-colors"
                     >
-                      Gửi lại mã OTP
+                      Bắt đầu lại
                     </button>
                   </div>
                 </>

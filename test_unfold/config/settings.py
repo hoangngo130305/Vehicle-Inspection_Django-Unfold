@@ -40,8 +40,10 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
         # Third party apps
     'rest_framework',
-    'rest_framework.authtoken',
+    'rest_framework.authtoken',  # ✅ BẬT LẠI - Cần cho API Authentication
+    'rest_framework_simplejwt',  
     'corsheaders',
+    'drf_yasg',
     "api",
     # "shop",
 ]
@@ -143,3 +145,49 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 #         lambda request: static("css/admin_custom.css"),
 #     ],
 # }
+
+# ============================================================
+# AUTHENTICATION & API SETTINGS
+# ============================================================
+
+from datetime import timedelta
+
+# ✅ Django Simple JWT Settings
+SIMPLE_JWT = {
+    'ACCESS_TOKEN_LIFETIME': timedelta(hours=24),  # ✅ CHANGED: 5 minutes → 24 hours for development
+    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),   # 7 days
+    'ROTATE_REFRESH_TOKENS': False,
+    'BLACKLIST_AFTER_ROTATION': False,
+    'AUTH_HEADER_TYPES': ('Bearer',),
+    'AUTH_TOKEN_CLASSES': ('rest_framework_simplejwt.tokens.AccessToken',),
+}
+
+# ✅ Django REST Framework Settings
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework_simplejwt.authentication.JWTAuthentication',  # ✅ For Admin Web (Bearer token)
+        'rest_framework.authentication.TokenAuthentication',          # ✅ For Postman (Token xxx)
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',  # ✅ Require authentication by default
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',  # ✅ Enable pagination
+    'PAGE_SIZE': 100,  # ✅ Default page size
+}
+
+
+# CORS Settings
+CORS_ALLOW_ALL_ORIGINS = True  # ✅ Allow all origins (development only)
+CORS_ALLOW_CREDENTIALS = True  # ✅ Allow cookies and auth headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',  # ✅ CRITICAL: Allow Authorization header for JWT
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]

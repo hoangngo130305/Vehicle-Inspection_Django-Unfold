@@ -315,6 +315,7 @@ class Order(models.Model):
     class Meta:
         db_table = 'orders'
         ordering = ['-created_at']
+        
 
     def save(self, *args, **kwargs):
         if not self.order_code:
