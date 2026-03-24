@@ -1,0 +1,90 @@
+<!-- Info Cards -->
+<div class="pricing-info-grid">
+    <!-- Fee Breakdown -->
+    <div class="pricing-info-card">
+        <div class="pricing-info-card-header">
+            <div class="pricing-info-card-icon pricing-info-card-icon-green">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="12" y1="1" x2="12" y2="23"></line>
+                    <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                </svg>
+            </div>
+            <div class="pricing-info-card-title">Chi tiết phí</div>
+        </div>
+        <div class="pricing-info-card-body">
+            <div class="pricing-info-row">
+                <div class="pricing-info-label">Phí đăng kiểm</div>
+                <div class="pricing-info-value pricing-fee-amount" id="cardInspectionFee">{{ original.inspection_fee|floatformat:0 }}đ</div>
+            </div>
+            <div class="pricing-info-row">
+                <div class="pricing-info-label">Phí dịch vụ</div>
+                <div class="pricing-info-value pricing-fee-amount" id="cardServiceFee">{{ original.service_fee|floatformat:0 }}đ</div>
+            </div>
+            <div class="pricing-info-row">
+                <div class="pricing-info-label">Phí đăng bộ</div>
+                <div class="pricing-info-value pricing-fee-amount" id="cardRegistrationFee">{{ original.registration_fee|floatformat:0 }}đ</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vehicle Type Info -->
+    <div class="pricing-info-card">
+        <div class="pricing-info-card-header">
+            <div class="pricing-info-card-icon pricing-info-card-icon-blue">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"></path>
+                </svg>
+            </div>
+            <div class="pricing-info-card-title">Thông tin loại xe</div>
+        </div>
+        <div class="pricing-info-card-body">
+            <div class="pricing-info-row">
+                <div class="pricing-info-label">Loại xe</div>
+                <div class="pricing-info-value">
+                    <a href="{% url 'admin:api_vehicletype_change' original.vehicle_type.id %}" style="color: #3b82f6; text-decoration: none; font-weight: 600;">
+                        {{ original.vehicle_type.type_name }}
+                    </a>
+                </div>
+            </div>
+            <div class="pricing-info-row">
+                <div class="pricing-info-label">Mã loại</div>
+                <div class="pricing-info-value">
+                    <code style="background: #f3f4f6; color: #6b7280; padding: 2px 8px; border-radius: 6px; font-size: 12px;">{{ original.vehicle_type.type_code }}</code>
+                </div>
+            </div>
+            <div class="pricing-info-row">
+                <div class="pricing-info-label">Hiệu lực từ</div>
+                <div class="pricing-info-value">{{ original.effective_from|date:"d/m/Y" }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Metadata -->
+    <div class="pricing-info-card">
+        <div class="pricing-info-card-header">
+            <div class="pricing-info-card-icon pricing-info-card-icon-purple">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+            </div>
+            <div class="pricing-info-card-title">Thông tin hệ thống</div>
+        </div>
+        <div class="pricing-info-card-body">
+            <div class="pricing-info-row">
+                <div class="pricing-info-label">ID</div>
+                <div class="pricing-info-value">
+                    <code style="background: #f9fafb; color: #6b7280; padding: 2px 8px; border-radius: 6px; font-size: 12px;">{{ original.id }}</code>
+                </div>
+            </div>
+            <div class="pricing-info-row">
+                <div class="pricing-info-label">Ngày tạo</div>
+                <div class="pricing-info-value">{{ original.created_at|date:"d/m/Y H:i" }}</div>
+            </div>
+            <div class="pricing-info-row">
+                <div class="pricing-info-label">Cập nhật cuối</div>
+                <div class="pricing-info-value">{{ original.updated_at|date:"d/m/Y H:i" }}</div>
+            </div>
+        </div>
+    </div>
+</div>

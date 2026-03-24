@@ -1,0 +1,698 @@
+{% extends "unfold/layouts/base.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="https://cdn.tailwindcss.com"></script>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Page Header -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Quản lý Bảng giá</h1>
+                <p class="text-gray-500 mt-1">Quản lý giá đăng kiểm theo loại xe</p>
+            </div>
+            <button
+                id="btnAddPricing"
+                class="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Thêm bảng giá
+            </button>
+        </div>
+
+        <!-- Search -->
+        <div class="relative">
+            <svg class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input
+                type="text"
+                id="searchInput"
+                placeholder="Tìm kiếm theo loại xe, giá..."
+                class="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-transparent">
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-4 gap-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
+                        <line x1="12" y1="1" x2="12" y2="23"></line>
+                        <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Tổng bảng giá</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ total_pricings }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Đang hiệu lực</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ active_pricings }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Loại xe</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ vehicle_types_count }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-600">
+                        <polyline points="23 6 13.5 15.5 8.5 10.5 1 18"></polyline>
+                        <polyline points="17 6 23 6 23 12"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Giá TB</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ average_price|floatformat:0 }}k</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pricing Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">STT</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Loại xe</th>
+                        <th class="text-right px-6 py-4 text-sm font-semibold text-gray-700">Phí ĐK</th>
+                        <th class="text-right px-6 py-4 text-sm font-semibold text-gray-700">Phí DV</th>
+                        <th class="text-right px-6 py-4 text-sm font-semibold text-gray-700">Phí ĐB</th>
+                        <th class="text-right px-6 py-4 text-sm font-semibold text-gray-700">Tổng tiền</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Hiệu lực từ</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Trạng thái</th>
+                        <th class="text-right px-6 py-4 text-sm font-semibold text-gray-700">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100" id="pricingTableBody">
+                    {% for pricing in pricings %}
+                    <tr class="hover:bg-gray-50 transition-colors" data-pricing-id="{{ pricing.id }}">
+                        <td class="px-6 py-4 text-sm font-medium text-gray-500">{{ forloop.counter }}</td>
+                        <td class="px-6 py-4">
+                            <a href="{% url 'admin:api_pricing_change' pricing.id %}" class="font-bold text-green-600 hover:text-green-700 hover:underline">
+                                {{ pricing.vehicle_type.type_name }}
+                            </a>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <span class="text-sm font-semibold text-gray-900 price-vnd" data-value="{{ pricing.inspection_fee }}"></span>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <span class="text-sm font-semibold text-gray-900 price-vnd" data-value="{{ pricing.service_fee }}"></span>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <span class="text-sm font-semibold text-gray-900 price-vnd" data-value="{{ pricing.registration_fee }}"></span>
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <span class="text-lg font-bold text-green-600 price-vnd" data-value="{{ pricing.total_amount }}"></span>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-2 text-sm text-gray-600">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                                    <line x1="16" y1="2" x2="16" y2="6"></line>
+                                    <line x1="8" y1="2" x2="8" y2="6"></line>
+                                    <line x1="3" y1="10" x2="21" y2="10"></line>
+                                </svg>
+                                {{ pricing.effective_from|date:"d/m/Y" }}
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if pricing.status == 'active' %}
+                                <span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">Hiệu lực</span>
+                            {% else %}
+                                <span class="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded-full font-medium">Hết hạn</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <button
+                                    class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors btn-edit"
+                                    data-pricing-id="{{ pricing.id }}"
+                                    data-vehicle-type="{{ pricing.vehicle_type.id }}"
+                                    data-inspection-fee="{{ pricing.inspection_fee|floatformat:0 }}"
+                                    data-service-fee="{{ pricing.service_fee|floatformat:0 }}"
+                                    data-registration-fee="{{ pricing.registration_fee|floatformat:0 }}"
+                                    data-effective-from="{{ pricing.effective_from|date:'Y-m-d' }}"
+                                    data-status="{{ pricing.status }}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                    </svg>
+                                </button>
+                                <button
+                                    class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors btn-delete"
+                                    data-pricing-id="{{ pricing.id }}"
+                                    data-vehicle-type="{{ pricing.vehicle_type.type_name }}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="px-6 py-12 text-center text-gray-500">
+                            Chưa có bảng giá nào
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Modal -->
+<div id="addPricingModal" class="fixed inset-0 bg-black/50 z-50 p-4 hidden" style="display: none; align-items: center; justify-content: center;">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Thêm bảng giá mới</h2>
+        
+        <form id="addPricingForm">
+            {% csrf_token %}
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Loại xe <span class="text-red-600">*</span></label>
+                        <select
+                            id="addVehicleType"
+                            name="vehicle_type"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                            required>
+                            <option value="">-- Chọn loại xe --</option>
+                            {% for vtype in vehicle_types %}
+                            <option value="{{ vtype.id }}">{{ vtype.type_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Hiệu lực từ <span class="text-red-600">*</span></label>
+                        <input
+                            type="date"
+                            id="addEffectiveFrom"
+                            name="effective_from"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                            required>
+                    </div>
+                </div>
+
+                <div class="bg-green-50 border-2 border-green-200 rounded-xl p-4">
+                    <h3 class="text-sm font-bold text-green-900 mb-3 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="1" x2="12" y2="23"></line>
+                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                        </svg>
+                        Chi tiết phí (VNĐ)
+                    </h3>
+                    
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Phí đăng kiểm</label>
+                            <input
+                                type="text"
+                                id="addInspectionFee"
+                                name="inspection_fee"
+                                placeholder="0"
+                                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-right"
+                                required>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Phí dịch vụ</label>
+                            <input
+                                type="text"
+                                id="addServiceFee"
+                                name="service_fee"
+                                placeholder="0"
+                                value="0"
+                                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-right">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Phí đăng bộ</label>
+                            <input
+                                type="text"
+                                id="addRegistrationFee"
+                                name="registration_fee"
+                                placeholder="0"
+                                value="0"
+                                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-right">
+                        </div>
+                    </div>
+
+                    <div class="mt-4 p-3 bg-white rounded-lg border border-green-300">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm font-semibold text-gray-700">Tổng tiền:</span>
+                            <span id="addTotalAmount" class="text-2xl font-bold text-green-600">0đ</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Trạng thái</label>
+                    <select
+                        id="addStatus"
+                        name="status"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500">
+                        <option value="active">Hiệu lực</option>
+                        <option value="inactive">Hết hạn</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-6">
+                <button
+                    type="button"
+                    id="btnCancelAdd"
+                    class="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
+                    Hủy
+                </button>
+                <button
+                    type="submit"
+                    class="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition-colors">
+                    Thêm bảng giá
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editPricingModal" class="fixed inset-0 bg-black/50 z-50 p-4 hidden" style="display: none; align-items: center; justify-content: center;">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Chỉnh sửa bảng giá</h2>
+        
+        <form id="editPricingForm">
+            {% csrf_token %}
+            <input type="hidden" id="editPricingId" name="pricing_id">
+            
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Loại xe <span class="text-red-600">*</span></label>
+                        <select
+                            id="editVehicleType"
+                            name="vehicle_type"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                            required>
+                            {% for vtype in vehicle_types %}
+                            <option value="{{ vtype.id }}">{{ vtype.type_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Hiệu lực từ <span class="text-red-600">*</span></label>
+                        <input
+                            type="date"
+                            id="editEffectiveFrom"
+                            name="effective_from"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500"
+                            required>
+                    </div>
+                </div>
+
+                <div class="bg-blue-50 border-2 border-blue-200 rounded-xl p-4">
+                    <h3 class="text-sm font-bold text-blue-900 mb-3 flex items-center gap-2">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="12" y1="1" x2="12" y2="23"></line>
+                            <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+                        </svg>
+                        Chi tiết phí (VNĐ)
+                    </h3>
+                    
+                    <div class="grid grid-cols-3 gap-4">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Phí đăng kiểm</label>
+                            <input
+                                type="text"
+                                id="editInspectionFee"
+                                name="inspection_fee"
+                                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-right"
+                                required>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Phí dịch vụ</label>
+                            <input
+                                type="text"
+                                id="editServiceFee"
+                                name="service_fee"
+                                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-right">
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 mb-2">Phí đăng bộ</label>
+                            <input
+                                type="text"
+                                id="editRegistrationFee"
+                                name="registration_fee"
+                                class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500 text-right">
+                        </div>
+                    </div>
+
+                    <div class="mt-4 p-3 bg-white rounded-lg border border-blue-300">
+                        <div class="flex items-center justify-between">
+                            <span class="text-sm font-semibold text-gray-700">Tổng tiền:</span>
+                            <span id="editTotalAmount" class="text-2xl font-bold text-green-600">0đ</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Trạng thái</label>
+                    <select
+                        id="editStatus"
+                        name="status"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500">
+                        <option value="active">Hiệu lực</option>
+                        <option value="inactive">Hết hạn</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-6">
+                <button
+                    type="button"
+                    id="btnCancelEdit"
+                    class="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
+                    Hủy
+                </button>
+                <button
+                    type="submit"
+                    class="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-xl font-semibold hover:bg-green-700 transition-colors">
+                    Cập nhật
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // === FORMAT NUMBER HELPER ===
+    function formatVND(number) {
+        // Format number with dot separator (Vietnamese style)
+        // Example: 150000 -> 150.000
+        if (!number && number !== 0) return '';
+        const num = parseInt(number);
+        if (isNaN(num)) return '';
+        return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+
+    const addModal = document.getElementById('addPricingModal');
+    const editModal = document.getElementById('editPricingModal');
+    const btnAddPricing = document.getElementById('btnAddPricing');
+    const btnCancelAdd = document.getElementById('btnCancelAdd');
+    const btnCancelEdit = document.getElementById('btnCancelEdit');
+    const addForm = document.getElementById('addPricingForm');
+    const editForm = document.getElementById('editPricingForm');
+    const searchInput = document.getElementById('searchInput');
+
+    // Auto-calculate total for Add form
+    const addInputs = ['addInspectionFee', 'addServiceFee', 'addRegistrationFee'];
+    addInputs.forEach(id => {
+        const input = document.getElementById(id);
+        
+        // Format on input (real-time)
+        input.addEventListener('input', function(e) {
+            // Remove all non-digit characters
+            let value = this.value.replace(/\D/g, '');
+            
+            // Format with dots (Vietnamese style)
+            if (value) {
+                value = formatVND(value);
+            }
+            this.value = value;
+            
+            // Calculate total
+            const inspectionRaw = document.getElementById('addInspectionFee').value.replace(/\./g, '').replace(/,/g, '');
+            const serviceRaw = document.getElementById('addServiceFee').value.replace(/\./g, '').replace(/,/g, '');
+            const registrationRaw = document.getElementById('addRegistrationFee').value.replace(/\./g, '').replace(/,/g, '');
+            
+            const inspection = parseInt(inspectionRaw) || 0;
+            const service = parseInt(serviceRaw) || 0;
+            const registration = parseInt(registrationRaw) || 0;
+            
+            console.log('DEBUG ADD:', {inspectionRaw, serviceRaw, registrationRaw, inspection, service, registration});
+            
+            const total = inspection + service + registration;
+            console.log('Total:', total);
+            document.getElementById('addTotalAmount').textContent = formatVND(total) + 'đ';
+        });
+    });
+
+    // Auto-calculate total for Edit form
+    const editInputs = ['editInspectionFee', 'editServiceFee', 'editRegistrationFee'];
+    editInputs.forEach(id => {
+        const input = document.getElementById(id);
+        
+        // Format on input (real-time)
+        input.addEventListener('input', function(e) {
+            // Remove all non-digit characters
+            let value = this.value.replace(/\D/g, '');
+            
+            // Format with dots (Vietnamese style)
+            if (value) {
+                value = formatVND(value);
+            }
+            this.value = value;
+            
+            // Calculate total
+            const inspectionRaw = document.getElementById('editInspectionFee').value.replace(/\./g, '').replace(/,/g, '');
+            const serviceRaw = document.getElementById('editServiceFee').value.replace(/\./g, '').replace(/,/g, '');
+            const registrationRaw = document.getElementById('editRegistrationFee').value.replace(/\./g, '').replace(/,/g, '');
+            
+            const inspection = parseInt(inspectionRaw) || 0;
+            const service = parseInt(serviceRaw) || 0;
+            const registration = parseInt(registrationRaw) || 0;
+            
+            const total = inspection + service + registration;
+            document.getElementById('editTotalAmount').textContent = formatVND(total) + 'đ';
+        });
+    });
+
+    // Show add modal
+    btnAddPricing.addEventListener('click', () => {
+        addModal.classList.remove('hidden');
+        addModal.style.display = 'flex';
+    });
+
+    // Close add modal
+    btnCancelAdd.addEventListener('click', () => {
+        addModal.classList.add('hidden');
+        addModal.style.display = 'none';
+        addForm.reset();
+        document.getElementById('addTotalAmount').textContent = '0đ';
+    });
+
+    // Close edit modal
+    btnCancelEdit.addEventListener('click', () => {
+        editModal.classList.add('hidden');
+        editModal.style.display = 'none';
+        editForm.reset();
+    });
+
+    // Close modals when clicking outside
+    [addModal, editModal].forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+                modal.style.display = 'none';
+            }
+        });
+    });
+
+    // Edit button click
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', function() {
+            // Use parseInt to remove decimal part (.00)
+            const inspectionFee = parseInt(this.dataset.inspectionFee) || 0;
+            const serviceFee = parseInt(this.dataset.serviceFee) || 0;
+            const registrationFee = parseInt(this.dataset.registrationFee) || 0;
+            
+            document.getElementById('editPricingId').value = this.dataset.pricingId;
+            document.getElementById('editVehicleType').value = this.dataset.vehicleType;
+            
+            // Format values before setting (use formatVND for dot separator)
+            document.getElementById('editInspectionFee').value = formatVND(inspectionFee);
+            document.getElementById('editServiceFee').value = formatVND(serviceFee);
+            document.getElementById('editRegistrationFee').value = formatVND(registrationFee);
+            
+            document.getElementById('editEffectiveFrom').value = this.dataset.effectiveFrom;
+            document.getElementById('editStatus').value = this.dataset.status;
+            
+            // Calculate total (use formatVND for dot separator)
+            const total = inspectionFee + serviceFee + registrationFee;
+            document.getElementById('editTotalAmount').textContent = formatVND(total) + 'đ';
+            
+            editModal.classList.remove('hidden');
+            editModal.style.display = 'flex';
+        });
+    });
+
+    // Delete button click
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (confirm(`Bạn có chắc muốn xóa bảng giá "${this.dataset.vehicleType}" không?`)) {
+                const formData = new FormData();
+                formData.append('pricing_id', this.dataset.pricingId);
+                formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+                
+                fetch('delete-pricing-ajax/', {
+                    method: 'POST',
+                    body: formData,
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    if (data.success) window.location.reload();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Có lỗi xảy ra!');
+                });
+            }
+        });
+    });
+
+    // Add form submit
+    addForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Convert formatted values to raw numbers before submit
+        const inspectionInput = document.getElementById('addInspectionFee');
+        const serviceInput = document.getElementById('addServiceFee');
+        const registrationInput = document.getElementById('addRegistrationFee');
+        
+        const inspectionRaw = inspectionInput.value.replace(/\./g, '').replace(/,/g, '');
+        const serviceRaw = serviceInput.value.replace(/\./g, '').replace(/,/g, '');
+        const registrationRaw = registrationInput.value.replace(/\./g, '').replace(/,/g, '');
+        
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', this.querySelector('[name=csrfmiddlewaretoken]').value);
+        formData.append('vehicle_type', document.getElementById('addVehicleType').value);
+        formData.append('inspection_fee', inspectionRaw);
+        formData.append('service_fee', serviceRaw);
+        formData.append('registration_fee', registrationRaw);
+        formData.append('effective_from', document.getElementById('addEffectiveFrom').value);
+        formData.append('status', document.getElementById('addStatus').value);
+        
+        // DEBUG: Log form data
+        console.log('=== ADD FORM DATA ===');
+        for (let [key, value] of formData.entries()) {
+            console.log(key + ': ' + value);
+        }
+        
+        fetch('add-pricing-ajax/', {
+            method: 'POST',
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log('Response:', data);
+            alert(data.message);
+            if (data.success) window.location.reload();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Có lỗi xảy ra!');
+        });
+    });
+
+    // Edit form submit
+    editForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        // Convert formatted values to raw numbers before submit
+        const inspectionRaw = document.getElementById('editInspectionFee').value.replace(/\./g, '').replace(/,/g, '');
+        const serviceRaw = document.getElementById('editServiceFee').value.replace(/\./g, '').replace(/,/g, '');
+        const registrationRaw = document.getElementById('editRegistrationFee').value.replace(/\./g, '').replace(/,/g, '');
+        
+        const formData = new FormData();
+        formData.append('csrfmiddlewaretoken', this.querySelector('[name=csrfmiddlewaretoken]').value);
+        formData.append('pricing_id', document.getElementById('editPricingId').value);
+        formData.append('vehicle_type', document.getElementById('editVehicleType').value);
+        formData.append('inspection_fee', inspectionRaw);
+        formData.append('service_fee', serviceRaw);
+        formData.append('registration_fee', registrationRaw);
+        formData.append('effective_from', document.getElementById('editEffectiveFrom').value);
+        formData.append('status', document.getElementById('editStatus').value);
+        
+        fetch('update-pricing-ajax/', {
+            method: 'POST',
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            if (data.success) window.location.reload();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Có lỗi xảy ra!');
+        });
+    });
+
+    // Search functionality
+    searchInput.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        const rows = document.querySelectorAll('#pricingTableBody tr');
+        
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            if (text.includes(searchTerm)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    });
+
+    // Format prices
+    document.querySelectorAll('.price-vnd').forEach(span => {
+        const value = parseFloat(span.getAttribute('data-value')) || 0;
+        span.textContent = value.toLocaleString('vi-VN') + 'đ';
+    });
+});
+</script>
+{% endblock %}

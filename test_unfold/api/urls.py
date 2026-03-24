@@ -11,6 +11,7 @@ router.register('vehicle-types', VehicleTypeViewSet, basename='vehicle-type')
 router.register('stations', StationViewSet, basename='station')
 router.register('time-slots', TimeSlotViewSet, basename='time-slot')  # ✅ ADDED
 router.register('pricings', PricingViewSet, basename='pricing')
+router.register('services', ServiceViewSet, basename='service')  # ✅ ADDED (17/03/2026)
 router.register('orders', OrderViewSet, basename='order')
 router.register('checklist-items', ChecklistItemViewSet, basename='checklist-item')
 router.register('order-checklists', OrderChecklistViewSet, basename='order-checklist')
@@ -41,6 +42,14 @@ urlpatterns = [
     # ✅✅ NEW - UPLOAD IMAGE (08/03/2026)
     # ========================================
     path('upload-image/', upload_image, name='upload-image'),
+    
+    # ========================================
+    # ✅✅ STAFF ASSIGNMENT AJAX ENDPOINTS (DJANGO ADMIN ONLY - ĐÃ XÓA KHỎI API)
+    # ========================================
+    # ❌ REMOVED: Các endpoints này chỉ dùng trong Django Admin, không phải public API
+    # path('get-staff-list/', get_staff_list_ajax, name='get-staff-list'),
+    # path('assign-staff/', assign_staff_ajax, name='assign-staff'),
+    # path('random-assign-staff/', random_assign_staff_ajax, name='random-assign-staff'),
     
     # ViewSet routes
     path('', include(router.urls)),

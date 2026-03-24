@@ -31,7 +31,7 @@ class Customer(models.Model):
     id_issued_date = models.DateField(null=True, blank=True, help_text='Ngày cấp CMND/CCCD')
     id_issued_place = models.CharField(max_length=200, null=True, blank=True, help_text='Nơi cấp CMND/CCCD')
     
-    # Địa chỉ
+    # Đa ch���
     address = models.TextField(null=True, blank=True)
     city = models.CharField(max_length=100, null=True, blank=True)
     district = models.CharField(max_length=100, null=True, blank=True)
@@ -63,8 +63,8 @@ class Customer(models.Model):
 
     class Meta:
         db_table = 'customers'
-        verbose_name = 'Customer'
-        verbose_name_plural = 'Customers'
+        verbose_name = 'Khách hàng'
+        verbose_name_plural = 'Khách hàng'
 
     def __str__(self):
         return f"{self.full_name} ({self.phone})"
@@ -88,6 +88,8 @@ class Role(models.Model):
 
     class Meta:
         db_table = 'roles'
+        verbose_name = 'Vai trò'
+        verbose_name_plural = 'Vai trò'
 
     def __str__(self):
         return self.name
@@ -113,6 +115,8 @@ class Station(models.Model):
 
     class Meta:
         db_table = 'stations'
+        verbose_name = 'Trạm đăng kiểm'
+        verbose_name_plural = 'Trạm đăng kiểm'
 
     def __str__(self):
         return self.station_name
@@ -154,8 +158,8 @@ class Staff(models.Model):
 
     class Meta:
         db_table = 'staff'
-        verbose_name = 'Staff'
-        verbose_name_plural = 'Staff'
+        verbose_name = 'Nhân viên'
+        verbose_name_plural = 'Nhân viên'
 
     def __str__(self):
         return f"{self.employee_code} - {self.full_name}"
@@ -179,6 +183,8 @@ class VehicleType(models.Model):
 
     class Meta:
         db_table = 'vehicle_types'
+        verbose_name = 'Loại xe'
+        verbose_name_plural = 'Loại xe'
 
     def __str__(self):
         return self.type_name
@@ -207,6 +213,8 @@ class Vehicle(models.Model):
 
     class Meta:
         db_table = 'vehicles'
+        verbose_name = 'Phương tiện'
+        verbose_name_plural = 'Phương tiện'
 
     def __str__(self):
         return f"{self.license_plate} - {self.brand} {self.model}"
@@ -217,15 +225,15 @@ class Vehicle(models.Model):
 # ========================================
 
 class Pricing(models.Model):
-    """Bảng: pricings"""
+    """Bảng: pricings - CHỈ 3 LOẠI PHÍ"""
     vehicle_type = models.ForeignKey(VehicleType, on_delete=models.CASCADE, related_name='pricings')
-    inspection_fee = models.DecimalField(max_digits=10, decimal_places=2)
-    emission_test_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)  # ✅ ADDED
-    sticker_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)  # ✅ ADDED
-    vat_percent = models.DecimalField(max_digits=5, decimal_places=2, default=10.00)  # ✅ ADDED
-    document_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    stamp_fee = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    
+    # 3 loại phí chính (max_digits=12 cho phép đến 9.999.999.999,99 ~ 10 tỷ)
+    inspection_fee = models.DecimalField(max_digits=12, decimal_places=2, verbose_name='Phí đăng kiểm')
+    service_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, verbose_name='Phí dịch vụ')
+    registration_fee = models.DecimalField(max_digits=12, decimal_places=2, default=0.00, verbose_name='Phí đường bộ')
+    
+    total_amount = models.DecimalField(max_digits=12, decimal_places=2, verbose_name='Tổng tiền')
     effective_from = models.DateField()
     effective_to = models.DateField(null=True, blank=True)
     status = models.CharField(max_length=20, default='active')
@@ -234,15 +242,87 @@ class Pricing(models.Model):
 
     class Meta:
         db_table = 'pricings'
+        verbose_name = 'Bảng giá'
+        verbose_name_plural = 'Bảng giá'
 
     def save(self, *args, **kwargs):
-        # Calculate total with VAT
-        base = self.inspection_fee + self.emission_test_fee + self.sticker_fee + self.document_fee + self.stamp_fee
-        self.total_amount = base * (1 + self.vat_percent / 100)
+        # Tính tổng = 3 phí (KHÔNG có VAT)
+        self.total_amount = self.inspection_fee + self.service_fee + self.registration_fee
         super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.vehicle_type.type_name} - {self.total_amount:,.0f}đ"
+
+
+# ========================================
+# 4B. SERVICES (Danh mục dịch vụ)
+# ========================================
+
+class Service(models.Model):
+    """
+    Bảng: services
+    Danh mục các dịch vụ đăng kiểm (Kiểm tra an toàn, khí thải, etc.)
+    """
+    CATEGORY_CHOICES = (
+        ('inspection', 'Kiểm tra an toàn kỹ thuật'),
+        ('emission', 'Kiểm tra khí thải'),
+        ('document', 'Dịch vụ giấy tờ'),
+        ('other', 'Dịch vụ khác'),
+    )
+    
+    service_code = models.CharField(max_length=20, unique=True, help_text='Mã dịch vụ (VD: SV001)')
+    service_name = models.CharField(max_length=200, help_text='Tên dịch vụ')
+    description = models.TextField(null=True, blank=True, help_text='Mô tả chi tiết')
+    category = models.CharField(max_length=50, choices=CATEGORY_CHOICES, default='other')
+    base_price = models.DecimalField(max_digits=10, decimal_places=2, default=0.00, help_text='Giá cơ bản')
+    is_required = models.BooleanField(default=False, help_text='Dịch vụ bắt buộc hay tùy chọn')
+    status = models.CharField(max_length=20, default='active')
+    display_order = models.IntegerField(default=0, help_text='Thứ tự hiển thị')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'services'
+        ordering = ['display_order', 'service_name']
+        verbose_name = 'Dịch vụ'
+        verbose_name_plural = 'Dịch vụ'
+    
+    def __str__(self):
+        return f"{self.service_code} - {self.service_name}"
+
+
+class OrderService(models.Model):
+    """
+    Bảng: order_services
+    Chi tiết các dịch vụ trong đơn hàng (1 đơn có nhiều dịch vụ)
+    """
+    order = models.ForeignKey('Order', on_delete=models.CASCADE, related_name='services')
+    service = models.ForeignKey(Service, on_delete=models.PROTECT, related_name='order_services')
+    service_name = models.CharField(max_length=200, help_text='Snapshot tên dịch vụ tại thời điểm đặt')
+    quantity = models.IntegerField(default=1)
+    unit_price = models.DecimalField(max_digits=10, decimal_places=2, help_text='Giá tại thời điểm đặt')
+    total_price = models.DecimalField(max_digits=10, decimal_places=2, help_text='unit_price * quantity - discount')
+    discount_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    notes = models.TextField(null=True, blank=True, help_text='Ghi chú riêng cho dịch vụ này')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        db_table = 'order_services'
+        verbose_name = 'Dịch vụ đơn hàng'
+        verbose_name_plural = 'Dịch vụ đơn hàng'
+        indexes = [
+            models.Index(fields=['order']),
+            models.Index(fields=['service']),
+        ]
+    
+    def save(self, *args, **kwargs):
+        # Auto calculate total_price
+        self.total_price = (self.unit_price * self.quantity) - self.discount_amount
+        super().save(*args, **kwargs)
+    
+    def __str__(self):
+        return f"{self.order.order_code} - {self.service_name}"
 
 
 # ========================================
@@ -256,6 +336,8 @@ class Order(models.Model):
         ('confirmed', 'Đã xác nhận'),
         ('assigned', 'Đã phân công'),
         ('in_progress', 'Đang thực hiện'),
+        ('vehicle_received', 'Đã nhận xe'),
+        ('vehicle_returned', 'Đã trả xe'),
         ('completed', 'Hoàn thành'),
         ('cancelled', 'Đã hủy'),
     )
@@ -315,6 +397,8 @@ class Order(models.Model):
     class Meta:
         db_table = 'orders'
         ordering = ['-created_at']
+        verbose_name = 'Đơn đăng kiểm'
+        verbose_name_plural = 'Đơn đăng kiểm'
         
 
     def save(self, *args, **kwargs):
@@ -338,6 +422,8 @@ class OrderStatusHistory(models.Model):
     class Meta:
         db_table = 'order_status_history'
         ordering = ['created_at']
+        verbose_name = 'Lịch sử trạng thái'
+        verbose_name_plural = 'Lịch sử trạng thái'
 
     def __str__(self):
         return f"{self.order.order_code}: {self.from_status} → {self.to_status}"
@@ -361,7 +447,7 @@ class VehicleReceiptLog(models.Model):
     status = models.CharField(
         max_length=20,
         choices=[
-            ('draft', 'Nháp'),
+            ('draft', 'Nhp'),
             ('vehicle_inspected', 'Đã kiểm tra xe'),
             ('condition_checked', 'Đã check tình trạng'),
             ('completed', 'Hoàn tất')
@@ -454,6 +540,8 @@ class VehicleReceiptLog(models.Model):
     class Meta:
         db_table = 'vehicle_receipt_logs'
         ordering = ['-created_at']
+        verbose_name = 'Nhận xe'
+        verbose_name_plural = 'Nhận xe'
     
     def __str__(self):
         return f"Receipt: {self.order.order_code} - {self.status}"
@@ -480,6 +568,7 @@ class VehicleReturnLog(models.Model):
         ('draft', 'Khởi tạo - Draft'),
         ('vehicle_inspected', 'Đã kiểm tra xe'),
         ('condition_checked', 'Đã kiểm tra tình trạng'),
+        ('inspection_expiry_updated', 'Đã cập nhật ngày hết hạn'),  # ✨ NEW 18/03/2026 - API 6.8
         ('completed', 'Hoàn tất'),
     )
     
@@ -601,6 +690,9 @@ class VehicleReturnLog(models.Model):
     class Meta:
         db_table = 'vehicle_return_logs'
         ordering = ['-created_at']
+        verbose_name = 'Trả xe'
+        verbose_name_plural = 'Trả xe'
+
 
     def __str__(self):
         return f"Biên bản trả xe - {self.order.order_code}"
@@ -688,6 +780,8 @@ class VehicleReturnAdditionalCost(models.Model):
     class Meta:
         db_table = 'vehicle_return_additional_costs'
         ordering = ['-created_at']
+        verbose_name = 'Chi phí phát sinh'
+        verbose_name_plural = 'Chi phí phát sinh'
 
     def __str__(self):
         return f"{self.cost_name} - {self.amount:,.0f}đ"
@@ -717,6 +811,8 @@ class ChecklistItem(models.Model):
     class Meta:
         db_table = 'checklist_items'
         ordering = ['display_order']
+        verbose_name = 'Hạng mục kiểm tra'
+        verbose_name_plural = 'Hạng mục kiểm tra'
 
     def __str__(self):
         return self.item_label
@@ -743,6 +839,8 @@ class OrderChecklist(models.Model):
 
     class Meta:
         db_table = 'order_checklist'
+        verbose_name = 'Kết quả kiểm tra'
+        verbose_name_plural = 'Kết quả kiểm tra'
 
     def __str__(self):
         return f"{self.order.order_code} - {self.checklist_item.item_label}"
@@ -787,6 +885,8 @@ class Payment(models.Model):
 
     class Meta:
         db_table = 'payments'
+        verbose_name = 'Thanh toán'
+        verbose_name_plural = 'Thanh toán'
 
     def save(self, *args, **kwargs):
         if not self.transaction_code:
@@ -854,6 +954,8 @@ class TimeSlot(models.Model):
             models.Index(fields=['station', 'is_active']),
             models.Index(fields=['day_of_week']),
         ]
+        verbose_name = 'Khung giờ'
+        verbose_name_plural = 'Khung giờ'
 
     def __str__(self):
         day_display = dict(self.DAY_OF_WEEK_CHOICES)[self.day_of_week]
@@ -908,6 +1010,8 @@ class Rating(models.Model):
 
     class Meta:
         db_table = 'ratings'
+        verbose_name = 'Đánh giá'
+        verbose_name_plural = 'Đánh giá'
 
     def __str__(self):
         return f"{self.order.order_code} - {self.overall_rating}⭐"
@@ -929,6 +1033,8 @@ class OTP(models.Model):
 
     class Meta:
         db_table = 'otp_verification'
+        verbose_name = 'Mã OTP'
+        verbose_name_plural = 'Mã OTP'
 
     def is_valid(self):
         return not self.is_verified and self.expires_at > timezone.now()

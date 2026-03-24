@@ -1,0 +1,117 @@
+<!-- Info Cards -->
+<div class="checklist-info-grid">
+    <!-- Basic Information -->
+    <div class="checklist-info-card">
+        <div class="checklist-info-card-header">
+            <div class="checklist-info-card-icon checklist-info-card-icon-purple">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="20 6 9 17 4 12"></polyline>
+                </svg>
+            </div>
+            <div class="checklist-info-card-title">Thông tin cơ bản</div>
+        </div>
+        <div class="checklist-info-card-body">
+            <div class="checklist-info-row">
+                <div class="checklist-info-label">Item Key</div>
+                <div class="checklist-info-value">
+                    <code style="background: #f5f3ff; color: #8b5cf6; padding: 2px 8px; border-radius: 6px; font-size: 12px;">{{ original.item_key }}</code>
+                </div>
+            </div>
+            <div class="checklist-info-row">
+                <div class="checklist-info-label">Mô tả</div>
+                <div class="checklist-info-value">{{ original.item_label }}</div>
+            </div>
+            <div class="checklist-info-row">
+                <div class="checklist-info-label">Thứ tự hiển thị</div>
+                <div class="checklist-info-value">{{ original.display_order }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Configuration -->
+    <div class="checklist-info-card">
+        <div class="checklist-info-card-header">
+            <div class="checklist-info-card-icon checklist-info-card-icon-blue">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3"></circle>
+                    <path d="M12 1v6m0 6v6m5.2-13.2l-4.2 4.2m0 6l-4.2 4.2m13.2-5.2h-6m-6 0H1m13.2 5.2l-4.2-4.2m0-6l-4.2-4.2"></path>
+                </svg>
+            </div>
+            <div class="checklist-info-card-title">Cấu hình</div>
+        </div>
+        <div class="checklist-info-card-body">
+            <div class="checklist-info-row">
+                <div class="checklist-info-label">Danh mục</div>
+                <div class="checklist-info-value">
+                    {% if original.category == "safety" %}
+                    <span class="checklist-badge checklist-badge-blue">An toàn</span>
+                    {% elif original.category == "emission" %}
+                    <span class="checklist-badge checklist-badge-purple">Khí thải</span>
+                    {% else %}
+                    <span class="checklist-badge checklist-badge-green">Cả hai</span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="checklist-info-row">
+                <div class="checklist-info-label">Yêu cầu ảnh</div>
+                <div class="checklist-info-value">
+                    {% if original.require_photo %}
+                    <span class="checklist-badge checklist-badge-green">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="20 6 9 17 4 12"></polyline>
+                        </svg>
+                        Có
+                    </span>
+                    {% else %}
+                    <span class="checklist-badge checklist-badge-gray">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <line x1="18" y1="6" x2="6" y2="18"></line>
+                            <line x1="6" y1="6" x2="18" y2="18"></line>
+                        </svg>
+                        Không
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="checklist-info-row">
+                <div class="checklist-info-label">Trạng thái</div>
+                <div class="checklist-info-value">
+                    {% if original.status == "active" %}
+                    <span class="checklist-badge checklist-badge-green">Hoạt động</span>
+                    {% else %}
+                    <span class="checklist-badge checklist-badge-red">Không hoạt động</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- System Metadata -->
+    <div class="checklist-info-card">
+        <div class="checklist-info-card-header">
+            <div class="checklist-info-card-icon checklist-info-card-icon-green">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <polyline points="12 6 12 12 16 14"></polyline>
+                </svg>
+            </div>
+            <div class="checklist-info-card-title">Thông tin hệ thống</div>
+        </div>
+        <div class="checklist-info-card-body">
+            <div class="checklist-info-row">
+                <div class="checklist-info-label">ID</div>
+                <div class="checklist-info-value">
+                    <code style="background: #f9fafb; color: #6b7280; padding: 2px 8px; border-radius: 6px; font-size: 12px;">{{ original.id }}</code>
+                </div>
+            </div>
+            <div class="checklist-info-row">
+                <div class="checklist-info-label">Ngày tạo</div>
+                <div class="checklist-info-value">{{ original.created_at|date:"d/m/Y H:i" }}</div>
+            </div>
+            <div class="checklist-info-row">
+                <div class="checklist-info-label">Cập nhật cuối</div>
+                <div class="checklist-info-value">{{ original.updated_at|date:"d/m/Y H:i" }}</div>
+            </div>
+        </div>
+    </div>
+</div>

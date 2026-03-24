@@ -1,0 +1,19 @@
+{% extends "admin/change_form.html" %}
+{% load i18n %}
+
+{% block content %}
+
+{% include "admin/api/timeslot/partials/_form_styles.html" %}
+
+{{ block.super }}
+
+<!-- ======== Custom Detail View ======== -->
+<div class="dk-detail">
+    {% include "admin/api/timeslot/partials/_form_hero.html" %}
+    {% include "admin/api/timeslot/partials/_form_info_cards.html" %}
+    {% include "admin/api/timeslot/partials/_form_edit.html" %}
+</div>
+
+{% include "admin/api/timeslot/partials/_form_scripts.html" %}
+
+{% endblock %}

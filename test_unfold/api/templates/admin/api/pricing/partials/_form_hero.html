@@ -1,0 +1,38 @@
+<!-- Hero Header -->
+<div class="pricing-detail-hero">
+    <div class="pricing-hero-top">
+        <div class="pricing-hero-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="12" y1="1" x2="12" y2="23"></line>
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+            </svg>
+            PRICING #{{ original.id }}
+        </div>
+        {% if original.status == "active" %}
+        <div class="pricing-hero-status pricing-hero-status-active">Hiệu lực</div>
+        {% else %}
+        <div class="pricing-hero-status pricing-hero-status-inactive">Hết hạn</div>
+        {% endif %}
+    </div>
+    <h1 class="pricing-hero-name">{{ original.vehicle_type.type_name }}</h1>
+    <div class="pricing-hero-amount">
+        <span class="pricing-hero-amount-label">Tổng phí:</span>
+        <span id="heroTotalAmount">{{ original.total_amount|floatformat:0 }}đ</span>
+    </div>
+    <div class="pricing-hero-actions">
+        <a href="../" class="pricing-hero-btn pricing-hero-btn-white">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+            </svg>
+            Quay lại danh sách
+        </a>
+        <a href="history/" class="pricing-hero-btn pricing-hero-btn-white">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+            </svg>
+            Lịch sử thay đổi
+        </a>
+    </div>
+</div>

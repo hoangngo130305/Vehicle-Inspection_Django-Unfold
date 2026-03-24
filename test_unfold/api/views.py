@@ -825,6 +825,21 @@ class PricingViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [AllowAny]
 
 
+# ========================================
+# SERVICE VIEWSETS (17/03/2026)
+# ========================================
+
+class ServiceViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    ViewSet cho danh mục dịch vụ đăng kiểm
+    GET /api/services/ - Danh sách dịch vụ
+    GET /api/services/{id}/ - Chi tiết dịch vụ
+    """
+    queryset = Service.objects.filter(status='active').order_by('display_order', 'service_name')
+    serializer_class = ServiceSerializer
+    permission_classes = [AllowAny]  # Public API
+
+
 class OrderViewSet(viewsets.ModelViewSet):
     queryset = Order.objects.all()
     serializer_class = OrderSerializer
@@ -1140,6 +1155,155 @@ class OrderViewSet(viewsets.ModelViewSet):
         })
     
     # ========================================
+    # ✅ QUẢN LÝ TRẠNG THÁI ĐƠN HÀNG (16/03/2026)
+    # ========================================
+    
+    @action(detail=True, methods=['post'], url_path='start-processing', permission_classes=[IsAuthenticated])
+    def start_processing(self, request, pk=None):
+        """
+        API: Staff bắt đầu xử lý đơn hàng
+        POST /api/staff/orders/{order_id}/start-processing/
+        
+        Chuyển trạng thái: pending → in_progress
+        
+        Response: {
+            "success": true,
+            "message": "Đã bắt đầu xử lý đơn hàng",
+            "order": {...}
+        }
+        
+        AUTHENTICATION: Token (Staff only)
+        VALIDATION:
+        - Chỉ staff được phân công mới được thực hiện
+        - Đơn hàng phải ở trạng thái "pending"
+        """
+        order = self.get_object()
+        
+        # ===== 1. CHECK PERMISSION =====
+        if not hasattr(request.user, 'staff_profile'):
+            return Response({
+                'success': False,
+                'error': 'Chỉ nhân viên mới có quyền thực hiện'
+            }, status=403)
+        
+        staff = request.user.staff_profile
+        
+        # Check staff có phải người được phân công không
+        if order.assigned_staff != staff:
+            return Response({
+                'success': False,
+                'error': 'Bạn không được phân công cho đơn hàng này'
+            }, status=403)
+        
+        # ===== 2. VALIDATE STATUS =====
+        if order.status != 'pending':
+            return Response({
+                'success': False,
+                'error': f'Không thể bắt đầu xử lý. Trạng thái hiện tại: {order.get_status_display()}',
+                'current_status': order.status
+            }, status=400)
+        
+        # ===== 3. UPDATE STATUS =====
+        previous_status = order.status
+        order.status = 'in_progress'
+        order.save()
+        
+        # ===== 4. LOG HISTORY =====
+        OrderStatusHistory.objects.create(
+            order=order,
+            from_status=previous_status,
+            to_status='in_progress',
+            changed_by=request.user,
+            notes='Staff bắt đầu xử lý đơn hàng'
+        )
+        
+        # ===== 5. RESPONSE =====
+        serializer = self.get_serializer(order)
+        return Response({
+            'success': True,
+            'message': 'Đã bắt đầu xử lý đơn hàng',
+            'order': serializer.data,
+            'previous_status': previous_status
+        }, status=200)
+    
+    @action(detail=True, methods=['post'], url_path='cancel-start', permission_classes=[IsAuthenticated])
+    def cancel_start(self, request, pk=None):
+        """
+        API: Staff hủy bắt đầu xử lý và quay lại trạng thái chờ xử lý
+        POST /api/staff/orders/{order_id}/cancel-start/
+        
+        Chuyển trạng thái: in_progress → pending
+        
+        Body: {
+            "reason": "Cần kiểm tra thêm thông tin" // Optional
+        }
+        
+        Response: {
+            "success": true,
+            "message": "Đã hủy và quay lại trạng thái chờ xử lý",
+            "order": {...}
+        }
+        
+        AUTHENTICATION: Token (Staff only)
+        VALIDATION:
+        - Chỉ staff được phân công mới được thực hiện
+        - Đơn hàng phải ở trạng thái "in_progress"
+        """
+        order = self.get_object()
+        
+        # ===== 1. CHECK PERMISSION =====
+        if not hasattr(request.user, 'staff_profile'):
+            return Response({
+                'success': False,
+                'error': 'Chỉ nhân viên mới có quyền thực hiện'
+            }, status=403)
+        
+        staff = request.user.staff_profile
+        
+        # Check staff có phải người được phân công không
+        if order.assigned_staff != staff:
+            return Response({
+                'success': False,
+                'error': 'Bạn không được phân công cho đơn hàng này'
+            }, status=403)
+        
+        # ===== 2. VALIDATE STATUS =====
+        if order.status != 'in_progress':
+            return Response({
+                'success': False,
+                'error': f'Không thể hủy. Trạng thái hiện tại: {order.get_status_display()}',
+                'current_status': order.status
+            }, status=400)
+        
+        # ===== 3. GET REASON (Optional) =====
+        reason = request.data.get('reason', '')
+        
+        # ===== 4. UPDATE STATUS =====
+        previous_status = order.status
+        order.status = 'pending'
+        order.save()
+        
+        # ===== 5. LOG HISTORY =====
+        notes = f'Staff hủy bắt đầu xử lý. Lý do: {reason}' if reason else 'Staff hủy bắt đầu xử lý'
+        OrderStatusHistory.objects.create(
+            order=order,
+            from_status=previous_status,
+            to_status='pending',
+            changed_by=request.user,
+            notes=notes
+        )
+        
+        # ===== 6. RESPONSE =====
+        serializer = self.get_serializer(order)
+        return Response({
+            'success': True,
+            'message': 'Đã hủy và quay lại trạng thái chờ xử lý',
+            'order': serializer.data,
+            'previous_status': previous_status,
+            'reason': reason
+        }, status=200)
+    
+    # ========================================
     # ✅ QUY TRÌNH NHẬN XE 3 BƯỚC (08/03/2026)
     # ========================================
     
@@ -1300,8 +1464,9 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def vehicle_receipt_initialize(self, request, pk=None):
         """
-        API #1: Initialize - Khởi tạo biên bản nhận xe
+        ✅ UPDATED 18/03/2026 - API #1: Initialize - Khởi tạo biên bản nhận xe
         POST /api/orders/{id}/vehicle-receipt-initialize/
+        Request: { customer_info + customer_signature + payment_confirmed }
         """
         # 1. Kiểm tra quyền - Chỉ staff được nhận xe
         user = request.user
@@ -1324,11 +1489,52 @@ class OrderViewSet(viewsets.ModelViewSet):
                 }
             }, status=400)
         
-        # 3. Tạo biên bản nhận xe mới với status='draft'
+        # 3. Validate serializer
+        serializer = VehicleReceiptInitializeSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({'success': False, 'errors': serializer.errors}, status=400)
+        
+        data = serializer.validated_data
+        
+        # 4. CẬP NHẬT CUSTOMER INFO (NEW)
+        customer_info = data.get('customer_info', {})
+        if customer_info:
+            customer = order.customer
+            
+            if 'full_name' in customer_info:
+                customer.full_name = customer_info['full_name']
+            if 'birth_date' in customer_info:
+                customer.date_of_birth = customer_info['birth_date']
+            if 'id_number' in customer_info:
+                customer.id_number = customer_info['id_number']
+            if 'id_issue_date' in customer_info:
+                customer.id_issued_date = customer_info['id_issue_date']
+            if 'id_issue_place' in customer_info:
+                customer.id_issued_place = customer_info['id_issue_place']
+            if 'phone' in customer_info:
+                customer.phone = customer_info['phone']
+            if 'address' in customer_info:
+                customer.address = customer_info['address']
+            
+            customer.save()
+        
+        # 5. KIỂM TRA THANH TOÁN (NEW)
+        payment_confirmed = data.get('payment_confirmed', True)
+        if payment_confirmed:
+            if order.payment_status != 'paid':
+                return Response({
+                    'success': False,
+                    'error': 'Đơn hàng chưa được thanh toán',
+                    'payment_required': True,
+                    'amount': float(order.estimated_amount)
+                }, status=400)
+        
+        # 6. TẠO BIÊN BẢN với customer_signature
         receipt = VehicleReceiptLog.objects.create(
             order=order,
             received_by=staff,
-            status='draft',
+            customer_signature=data['customer_signature'],
+            status='initialized',
             odometer_reading=0,
             fuel_level='half',
             exterior_front='',
@@ -1345,7 +1551,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         return Response({
             'success': True,
-            'message': 'Đã khởi tạo biên bản nhận xe',
+            'message': 'Đã khởi tạo biên bản nhận xe và cập nhật thông tin khách hàng',
             'receipt': {
                 'id': receipt.id,
                 'order_id': order.id,
@@ -1355,6 +1561,17 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'staff_name': staff.full_name,
                 'staff_code': staff.employee_code,
                 'created_at': receipt.created_at
+            },
+            'customer': {
+                'id': order.customer.id,
+                'full_name': order.customer.full_name,
+                'phone': order.customer.phone,
+                'id_number': order.customer.id_number
+            },
+            'order': {
+                'id': order.id,
+                'payment_status': order.payment_status,
+                'estimated_amount': float(order.estimated_amount)
             }
         }, status=201)
     
@@ -1403,6 +1620,12 @@ class OrderViewSet(viewsets.ModelViewSet):
                       'photo_right_url', 'photo_dashboard_url', 'photo_interior_url']:
             if field in serializer.validated_data:
                 setattr(receipt, field, serializer.validated_data[field])
+        
+        # ===== THÊM MỚI: Update 2 giấy tờ =====
+        if 'vehicle_registration_url' in serializer.validated_data:
+            receipt.vehicle_registration_url = serializer.validated_data['vehicle_registration_url']
+        if 'vehicle_insurance_url' in serializer.validated_data:
+            receipt.vehicle_insurance_url = serializer.validated_data['vehicle_insurance_url']
         
         # 5. Update status
         receipt.status = 'vehicle_inspected'
@@ -1461,12 +1684,26 @@ class OrderViewSet(viewsets.ModelViewSet):
             if field in serializer.validated_data:
                 setattr(receipt, field, serializer.validated_data[field])
         
+        # 4.1. Update 2 checkbox bổ sung (giấy tờ & tem)
+        for field in ['documents_complete_ok', 'stamp_attached_ok']:
+            if field in serializer.validated_data:
+                setattr(receipt, field, serializer.validated_data[field])
+        
         # 5. Update 8 ảnh checklist
         for field in ['exterior_check_photo', 'tires_check_photo', 'lights_check_photo', 
                       'mirrors_check_photo', 'windows_check_photo', 'interior_check_photo', 
                       'engine_check_photo', 'fuel_check_photo']:
             if field in serializer.validated_data:
                 setattr(receipt, field, serializer.validated_data[field])
+        
+        # 5.1. Update 2 ảnh bổ sung (giấy tờ & tem)
+        for field in ['documents_complete_photo', 'stamp_attached_photo']:
+            if field in serializer.validated_data:
+                setattr(receipt, field, serializer.validated_data[field])
+        
+        # 5.2. Update additional_notes
+        if 'additional_notes' in serializer.validated_data:
+            receipt.additional_notes = serializer.validated_data['additional_notes']
         
         # NOTE: Các fields mô tả text (exterior_front, windows_condition, etc.) 
         # KHÔNG được update vì giao diện chỉ có checkbox + ảnh, không có input text
@@ -1485,8 +1722,10 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def vehicle_receipt_finalize(self, request, pk=None):
         """
-        API #4: Finalize - Hoàn tất biên bản
+        ✅ UPDATED 18/03/2026 - API #4: Finalize - Hoàn tất biên bản NHẬN XE
         POST /api/orders/{id}/vehicle-receipt-finalize/
+        Request: { staff_signature }
+        CHỈ CẦN staff_signature - customer_signature đã có ở API 1, giấy tờ đã có ở API 2
         """
         # 1. Kiểm tra quyền
         user = request.user
@@ -1496,102 +1735,44 @@ class OrderViewSet(viewsets.ModelViewSet):
         staff = user.staff_profile
         order = self.get_object()
         
-        # 2. Validate serializer
+        # 2. Kiểm tra Order status (phải in_progress)
+        if order.status != 'in_progress':
+            return Response({
+                'success': False,
+                'error': f'Order phải ở trạng thái in_progress. Hiện tại: {order.status}'
+            }, status=400)
+        
+        # 3. Validate serializer
         serializer = VehicleReceiptFinalizeSerializer(data=request.data)
         if not serializer.is_valid():
             return Response({'success': False, 'errors': serializer.errors}, status=400)
         
-        # 3. Lấy hoặc tạo receipt
-        receipt, created = VehicleReceiptLog.objects.get_or_create(
-            order=order,
-            defaults={
-                'received_by': staff,
-                'status': 'draft',
-                'odometer_reading': 0,
-                'fuel_level': 'half',
-                'exterior_front': '',
-                'exterior_rear': '',
-                'exterior_left': '',
-                'exterior_right': '',
-                'windows_condition': '',
-                'lights_condition': '',
-                'mirrors_condition': '',
-                'wipers_condition': '',
-                'tires_condition': '',
-                'interior_condition': ''
-            }
-        )
+        # 4. Lấy receipt (PHẢI đã tồn tại từ API 1)
+        if not hasattr(order, 'receipt_log'):
+            return Response({
+                'success': False,
+                'error': 'Chưa khởi tạo biên bản nhận xe. Vui lòng gọi API Initialize trước.',
+                'message': 'Biên bản chưa tồn tại'
+            }, status=400)
         
-        # 4. Update giấy tờ + ghi chú
-        if 'vehicle_registration_url' in serializer.validated_data:
-            receipt.vehicle_registration_url = serializer.validated_data['vehicle_registration_url']
-        if 'vehicle_insurance_url' in serializer.validated_data:
-            receipt.vehicle_insurance_url = serializer.validated_data['vehicle_insurance_url']
-        if 'additional_notes' in serializer.validated_data:
-            receipt.additional_notes = serializer.validated_data['additional_notes']
+        receipt = order.receipt_log
         
-        # 5. Update customer signature
-        if 'customer_signature' in serializer.validated_data:
-            receipt.customer_signature = serializer.validated_data['customer_signature']
+        # 5. Update staff_signature
+        receipt.staff_signature = serializer.validated_data['staff_signature']
         
-        # 6. Update customer info (if provided)
-        if 'customer_info' in serializer.validated_data:
-            customer_info = serializer.validated_data['customer_info']
-            customer = order.customer
-            
-            if 'full_name' in customer_info:
-                customer.full_name = customer_info['full_name']
-            if 'phone' in customer_info:
-                customer.phone = customer_info['phone']
-            if 'address' in customer_info:
-                customer.address = customer_info['address']
-            if 'date_of_birth' in customer_info:
-                customer.date_of_birth = customer_info['date_of_birth']
-            if 'id_number' in customer_info:
-                customer.id_number = customer_info['id_number']
-            if 'id_issued_date' in customer_info:
-                customer.id_issued_date = customer_info['id_issued_date']
-            if 'id_issued_place' in customer_info:
-                customer.id_issued_place = customer_info['id_issued_place']
-            
-            customer.save()
-        
-        # 7. Update status → completed
+        # 6. Update status → completed
         receipt.status = 'completed'
         receipt.completed_at = timezone.now()
         receipt.save()
         
-        # 8. Update Order status → in_progress
-        order.status = 'in_progress'
+        # 7. Update Order status → vehicle_received
+        order.status = 'vehicle_received'
         if not order.started_at:
             order.started_at = timezone.now()
         order.save()
         
-        # 9. Tạo Payment (nếu có)
-        payment_data = None
-        if serializer.validated_data.get('payment_completed', False):
-            payment_method = serializer.validated_data.get('payment_method', 'cash')
-            
-            # Map payment_method
-            method_map = {
-                'qr': 'vietqr',
-                'cash': 'cash'
-            }
-            
-            payment, payment_created = Payment.objects.get_or_create(
-                order=order,
-                defaults={
-                    'amount': order.estimated_amount + order.additional_amount,
-                    'payment_method': method_map.get(payment_method, 'cash'),
-                    'status': 'paid',
-                    'paid_at': timezone.now()
-                }
-            )
-            
-            payment_data = PaymentSerializer(payment).data
-        
-        # 10. Return response
-        response_data = {
+        # 8. Return response
+        return Response({
             'success': True,
             'message': 'Đã hoàn tất biên bản nhận xe',
             'receipt': VehicleReceiptLogSerializer(receipt).data,
@@ -1601,12 +1782,57 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'status': order.status,
                 'started_at': order.started_at
             }
-        }
+        }, status=200)
+    
+    @action(detail=True, methods=['post'], url_path='complete-vehicle-received', permission_classes=[IsAuthenticated])
+    def complete_vehicle_received(self, request, pk=None):
+        """
+        🎯 NEW - API: Hoàn tất đơn hàng sau khi nhận xe
+        POST /api/orders/{id}/complete-vehicle-received/
         
-        if payment_data:
-            response_data['payment'] = payment_data
+        Chuyển trạng thái: VEHICLE_RECEIVED → COMPLETED
+        Dùng sau khi hoàn tất quá trình nhận xe
+        """
+        # 1. Kiểm tra quyền
+        user = request.user
+        if not hasattr(user, 'staff_profile'):
+            return Response({
+                'success': False,
+                'error': 'Chỉ nhân viên mới có quyền thực hiện'
+            }, status=403)
         
-        return Response(response_data, status=200)
+        order = self.get_object()
+        
+        # 2. Kiểm tra Order status (phải vehicle_received)
+        if order.status != 'vehicle_received':
+            return Response({
+                'success': False,
+                'error': f'Order phải ở trạng thái vehicle_received. Hiện tại: {order.status}'
+            }, status=400)
+        
+        # 3. Kiểm tra biên bản nhận xe tồn tại
+        if not hasattr(order, 'receipt_log'):
+            return Response({
+                'success': False,
+                'error': 'Chưa có biên bản nhận xe'
+            }, status=404)
+        
+        # 4. Update Order status → completed
+        order.status = 'completed'
+        order.completed_at = timezone.now()
+        order.save()
+        
+        # 5. Return response
+        return Response({
+            'success': True,
+            'message': 'Đã hoàn tất đơn hàng (nhận xe)',
+            'order': {
+                'id': order.id,
+                'order_code': order.order_code,
+                'status': order.status,
+                'completed_at': order.completed_at
+            }
+        }, status=200)
     
     # ========================================
     # ✅✅ NEW - VEHICLE RETURN APIs (10/03/2026)
@@ -1703,10 +1929,10 @@ class OrderViewSet(viewsets.ModelViewSet):
         staff = user.staff_profile
         order = self.get_object()
         
-        # 2. Kiểm tra Order status (phải in_progress hoặc completed)
-        if order.status not in ['in_progress', 'completed']:
+        # 2. Kiểm tra Order status (phải in_progress - chỉ được trả xe sau khi bắt đầu)
+        if order.status != 'in_progress':
             return Response({
-                'error': f'Order phải ở trạng thái in_progress hoặc completed. Hiện tại: {order.status}'
+                'error': f'Order phải ở trạng thái in_progress. Hiện tại: {order.status}'
             }, status=400)
         
         # 3. Kiểm tra đã có biên bản chưa
@@ -1724,7 +1950,11 @@ class OrderViewSet(viewsets.ModelViewSet):
             status='draft'
         )
         
-        # 5. Return response
+        # 5. Cập nhật Order status → vehicle_returned
+        order.status = 'vehicle_returned'
+        order.save()
+        
+        # 6. Return response
         return Response({
             'success': True,
             'message': 'Đã khởi tạo biên bản trả xe',
@@ -1735,6 +1965,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'status': return_log.status,
                 'returned_by': staff.full_name,
                 'returned_at': return_log.returned_at
+            },
+            'order': {
+                'id': order.id,
+                'status': order.status,
+                'status_display': order.get_status_display()
             }
         }, status=201)
     
@@ -1817,20 +2052,18 @@ class OrderViewSet(viewsets.ModelViewSet):
             }, status=404)
         
         # 3. Validate data
-        serializer = VehicleReceiptConditionCheckSerializer(data=request.data)
+        serializer = VehicleReturnConditionCheckSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=400)
         
-        # 4. Cập nhật 10 checkbox + 10 ảnh (UPDATED 10/03/2026 - Thêm 2 checkbox + 2 ảnh giấy tờ/tem)
+        # 4. Cập nhật 8 checkbox + 8 ảnh cho TRẢ XE (UPDATED 16/03/2026 - Tách riêng từ NHẬN XE)
         checkbox_fields = ['exterior_ok', 'tires_ok', 'lights_ok', 'mirrors_ok',
-                          'windows_ok', 'interior_ok', 'engine_ok', 'fuel_ok']
+                          'windows_ok', 'interior_ok', 'documents_complete_ok', 'stamp_attached_ok']
         photo_fields = ['exterior_check_photo', 'tires_check_photo', 'lights_check_photo',
                        'mirrors_check_photo', 'windows_check_photo', 'interior_check_photo',
-                       'engine_check_photo', 'fuel_check_photo']
-        additional_checkbox_fields = ['documents_complete_ok', 'stamp_attached_ok']
-        additional_photo_fields = ['documents_complete_photo', 'stamp_attached_photo']  # ⭐ MỚI
+                       'documents_complete_photo', 'stamp_attached_photo']
         
-        for field in checkbox_fields + photo_fields + additional_checkbox_fields + additional_photo_fields:
+        for field in checkbox_fields + photo_fields:
             value = serializer.validated_data.get(field)
             if value is not None:  # Cho phép False
                 setattr(return_log, field, value)
@@ -1847,34 +2080,95 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'id': return_log.id,
                 'status': return_log.status,
                 'checklist': {
-                    # 8 checkbox chính
+                    # 8 checkbox TRẢ XE (UPDATED 16/03/2026)
                     'exterior_ok': return_log.exterior_ok,
                     'tires_ok': return_log.tires_ok,
                     'lights_ok': return_log.lights_ok,
                     'mirrors_ok': return_log.mirrors_ok,
                     'windows_ok': return_log.windows_ok,
                     'interior_ok': return_log.interior_ok,
-                    'engine_ok': return_log.engine_ok,
-                    'fuel_ok': return_log.fuel_ok,
+                    'documents_complete_ok': return_log.documents_complete_ok,
+                    'stamp_attached_ok': return_log.stamp_attached_ok,
                     
-                    # 8 ảnh checklist chính
+                    # 8 ảnh checklist TRẢ XE
                     'exterior_check_photo': return_log.exterior_check_photo,
                     'tires_check_photo': return_log.tires_check_photo,
                     'lights_check_photo': return_log.lights_check_photo,
                     'mirrors_check_photo': return_log.mirrors_check_photo,
                     'windows_check_photo': return_log.windows_check_photo,
                     'interior_check_photo': return_log.interior_check_photo,
-                    'engine_check_photo': return_log.engine_check_photo,
-                    'fuel_check_photo': return_log.fuel_check_photo,
-                    
-                    # 2 checkbox bổ sung (giấy tờ & tem)
-                    'documents_complete_ok': return_log.documents_complete_ok,
-                    'stamp_attached_ok': return_log.stamp_attached_ok,
-                    
-                    # ✅✅ 2 ảnh minh chứng bổ sung (MỚI)
                     'documents_complete_photo': return_log.documents_complete_photo,
                     'stamp_attached_photo': return_log.stamp_attached_photo,
                 }
+            }
+        }, status=200)
+    
+    @action(detail=True, methods=['post'], url_path='vehicle-return-update-inspection-expiry', permission_classes=[IsAuthenticated])
+    def vehicle_return_update_inspection_expiry(self, request, pk=None):
+        """
+        ✨ NEW 18/03/2026 - API 6.8: Update Inspection Expiry
+        POST /api/orders/{id}/vehicle-return-update-inspection-expiry/
+        
+        Request: { inspection_expiry_date }
+        Cập nhật ngày hết hạn đăng kiểm TRƯỚC khi hoàn tất biên bản
+        """
+        # 1. Kiểm tra quyền
+        user = request.user
+        if not hasattr(user, 'staff_profile'):
+            return Response({
+                'success': False,
+                'error': 'Chỉ nhân viên mới có quyền cập nhật'
+            }, status=403)
+        
+        staff = user.staff_profile
+        order = self.get_object()
+        
+        # 2. Validate serializer
+        serializer = VehicleReturnUpdateInspectionExpirySerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'errors': serializer.errors
+            }, status=400)
+        
+        inspection_expiry_date = serializer.validated_data['inspection_expiry_date']
+        
+        # 3. Kiểm tra biên bản trả xe đã tồn tại chưa
+        if not hasattr(order, 'return_log'):
+            return Response({
+                'success': False,
+                'error': 'Chưa khởi tạo biên bản trả xe. Vui lòng gọi API Initialize trước.',
+                'message': 'Biên bản trả xe chưa tồn tại'
+            }, status=400)
+        
+        return_log = order.return_log
+        
+        # 4. Cập nhật Vehicle.next_inspection_date (field có sẵn trong DB)
+        vehicle = order.vehicle
+        old_expiry = vehicle.next_inspection_date
+        vehicle.next_inspection_date = inspection_expiry_date
+        vehicle.save()
+        
+        # 5. Lưu snapshot vào VehicleReturnLog.certificate_expiry_date (field có sẵn trong DB)
+        return_log.certificate_expiry_date = inspection_expiry_date
+        return_log.status = 'inspection_expiry_updated'
+        return_log.save()
+        
+        # 6. Return response
+        return Response({
+            'success': True,
+            'message': 'Đã cập nhật ngày hết hạn đăng kiểm',
+            'vehicle': {
+                'id': vehicle.id,
+                'license_plate': vehicle.license_plate,
+                'next_inspection_date': str(vehicle.next_inspection_date),
+                'old_inspection_date': str(old_expiry) if old_expiry else None,
+                'updated_at': vehicle.updated_at
+            },
+            'return_log': {
+                'id': return_log.id,
+                'status': return_log.status,
+                'certificate_expiry_date': str(return_log.certificate_expiry_date) if return_log.certificate_expiry_date else None
             }
         }, status=200)
     
@@ -1900,18 +2194,24 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'error': 'Chưa có biên bản trả xe. Vui lòng gọi initialize trước'
             }, status=404)
         
-        # 3. Kiểm tra status (phải đã qua condition_checked)
+        # 3. Kiểm tra Order status (phải vehicle_returned)
+        if order.status != 'vehicle_returned':
+            return Response({
+                'error': f'Order phải ở trạng thái vehicle_returned. Hiện tại: {order.status}'
+            }, status=400)
+        
+        # 4. Kiểm tra status của biên bản (phải đã qua condition_checked)
         if return_log.status not in ['condition_checked', 'completed']:
             return Response({
                 'error': f'Biên bản phải ở trạng thái condition_checked. Hiện tại: {return_log.status}'
             }, status=400)
         
-        # 4. Validate data
-        serializer = VehicleReceiptFinalizeSerializer(data=request.data)
+        # 5. Validate data
+        serializer = VehicleReturnFinalizeSerializer(data=request.data)
         if not serializer.is_valid():
             return Response(serializer.errors, status=400)
         
-        # 5. Cập nhật 11 giấy tờ + ghi chú + chữ ký (UPDATED 10/03/2026)
+        # 6. Cập nhật 11 giấy tờ + ghi chú + chữ ký (UPDATED 10/03/2026)
         data = serializer.validated_data
         
         # NHÓM A: Giấy đăng ký xe (2 fields)
@@ -1986,17 +2286,17 @@ class OrderViewSet(viewsets.ModelViewSet):
             # Lưu vào DB
             return_log.handover_checklist = handover_checklist
         
-        # 6. Update status → completed
+        # 8. Update status → completed
         return_log.status = 'completed'
         return_log.completed_at = timezone.now()
         return_log.save()
         
-        # 7. Update Order status → completed (QUAN TRỌNG)
+        # 9. Update Order status → completed (QUAN TRỌNG)
         order.status = 'completed'
         order.completed_at = timezone.now()
         order.save()
         
-        # 8. Return response
+        # 10. Return response
         response_data = {
             'success': True,
             'message': 'Đã hoàn tất biên bản trả xe',
@@ -2400,6 +2700,75 @@ class OrderViewSet(viewsets.ModelViewSet):
             'success': True,
             'data': response_data
         }, status=200)
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def pricing(self, request, pk=None):
+        """
+        GET /api/orders/{order_id}/pricing/
+        Lấy thông tin bảng giá áp dụng cho đơn hàng này
+
+        Logic:
+        - Lấy vehicle_type từ order.vehicle.vehicle_type
+        - Tìm pricing active cho vehicle_type đó
+        - Trả về pricing info hoặc null nếu không tìm thấy
+
+        Response:
+        {
+            "order_code": "DK20260320ABC123",
+            "vehicle_type": {
+                "id": 2,
+                "type_name": "Xe du lịch"
+            },
+            "pricing": {
+                "id": 1,
+                "inspection_fee": "200000.00",
+                "service_fee": "100000.00",
+                "registration_fee": "50000.00",
+                "total_amount": "350000.00",
+                "effective_from": "2026-03-01",
+                "effective_to": null,
+                "status": "active"
+            } | null
+        }
+        """
+        order = self.get_object()
+
+        # Lấy vehicle_type từ order
+        vehicle_type = order.vehicle.vehicle_type
+
+        # Tìm pricing active cho vehicle_type này
+        try:
+            pricing = Pricing.objects.filter(
+                vehicle_type=vehicle_type,
+                status='active'
+            ).first()
+
+            pricing_data = None
+            if pricing:
+                pricing_data = {
+                    'id': pricing.id,
+                    'inspection_fee': str(pricing.inspection_fee),
+                    'service_fee': str(pricing.service_fee),
+                    'registration_fee': str(pricing.registration_fee),
+                    'total_amount': str(pricing.total_amount),
+                    'effective_from': pricing.effective_from.isoformat() if pricing.effective_from else None,
+                    'effective_to': pricing.effective_to.isoformat() if pricing.effective_to else None,
+                    'status': pricing.status
+                }
+
+            return Response({
+                'order_code': order.order_code,
+                'vehicle_type': {
+                    'id': vehicle_type.id,
+                    'type_name': vehicle_type.type_name
+                },
+                'pricing': pricing_data
+            })
+
+        except Exception as e:
+            return Response({
+                'error': f'Lỗi khi lấy pricing: {str(e)}'
+            }, status=500)
 
 
 class ChecklistItemViewSet(viewsets.ReadOnlyModelViewSet):
@@ -3129,31 +3498,118 @@ class VehicleReturnAdditionalCostViewSet(viewsets.ModelViewSet):
             })
 
 
-# # URL patterns
-# urlpatterns = [
-#     # ========================================
-#     # UNIFIED LOGIN - API ĐĂNG NHẬP THỐNG NHẤT
-#     # ========================================
-#     path('login/', unified_login, name='unified-login'),
-#     path('register/', customer_register, name='customer-register'),
+# ========================================
+# ✅✅ STAFF ASSIGNMENT AJAX ENDPOINTS (WRAPPER FUNCTIONS)
+# ========================================
+
+def get_staff_list_ajax(request):
+    """
+    Wrapper function cho Staff Assignment API
+    GET /api/get-staff-list/
+    """
+    from django.http import JsonResponse
     
-#     # ========================================
-#     # OTP MANAGEMENT
-#     # ========================================
-#     path('auth/request-otp/', customer_request_otp, name='request-otp'),
-#     path('auth/verify-otp/', verify_otp, name='verify-otp'),
+    try:
+        # Lấy tất cả staff với role info
+        staff_list = []
+        for staff in Staff.objects.select_related('role').all():
+            staff_list.append({
+                'id': staff.id,
+                'full_name': staff.full_name,
+                'employee_code': staff.employee_code,
+                'role_name': staff.role.name if staff.role else 'Nhân viên',
+                'status': staff.status,
+            })
+        
+        return JsonResponse({
+            'success': True,
+            'staff_list': staff_list
+        })
+    except Exception as e:
+        return JsonResponse({
+            'success': False,
+            'error': str(e)
+        }, status=500)
+
+
+def assign_staff_ajax(request):
+    """
+    Wrapper function cho Staff Assignment API
+    POST /api/assign-staff/
+    Body: {order_id: int, staff_id: int}
+    """
+    from django.http import JsonResponse
     
-#     # ========================================
-#     # AUTHENTICATION UTILITIES
-#     # ========================================
-#     path('auth/logout/', user_logout, name='logout'),
-#     path('auth/me/', current_user, name='current-user'),
+    if request.method == 'POST':
+        try:
+            order_id = request.POST.get('order_id')
+            staff_id = request.POST.get('staff_id')
+            
+            order = Order.objects.get(id=order_id)
+            staff = Staff.objects.get(id=staff_id)
+            
+            order.assigned_staff = staff
+            order.status = 'assigned'  # Update status
+            order.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Đã phân công {staff.full_name} cho đơn {order.order_code}',
+                'staff_name': staff.full_name,
+                'staff_id': staff.id
+            })
+                
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
     
-#     # ========================================
-#     # DEBUG/TEST ENDPOINTS (Development only)
-#     # ========================================
-#     path('debug/test-assign-sync/', test_assign_sync_api, name='test-assign-sync'),
+    return JsonResponse({'success': False, 'error': 'Invalid request'}, status=400)
+
+
+def random_assign_staff_ajax(request):
+    """
+    Wrapper function cho Random Staff Assignment API
+    POST /api/random-assign-staff/
+    Body: {order_id: int}
+    """
+    from django.http import JsonResponse
+    import random
     
-#     # ViewSet routes
-#     path('', include(router.urls)),
-# ]c:\Users\hoang\Downloads\Vehicle\dangkiem\api\utils.py
+    if request.method == 'POST':
+        try:
+            order_id = request.POST.get('order_id')
+            order = Order.objects.get(id=order_id)
+            
+            # Lấy danh sách staff active
+            active_staff = list(Staff.objects.filter(status='active'))
+            
+            if not active_staff:
+                return JsonResponse({
+                    'success': False,
+                    'error': 'Không có nhân viên rảnh'
+                }, status=400)
+            
+            # Random chọn 1 staff
+            random_staff = random.choice(active_staff)
+            
+            order.assigned_staff = random_staff
+            order.status = 'assigned'
+            order.save()
+            
+            return JsonResponse({
+                'success': True,
+                'message': f'Đã phân công ngẫu nhiên cho {random_staff.full_name}',
+                'staff_name': random_staff.full_name,
+                'staff_id': random_staff.id
+            })
+                
+        except Exception as e:
+            return JsonResponse({
+                'success': False,
+                'error': str(e)
+            }, status=400)
+    
+    return JsonResponse({'success': False, 'error': 'Invalid request'}, status=400)
+

@@ -1,0 +1,148 @@
+<script>
+// === FORMAT NUMBER HELPER ===
+function formatVND(number) {
+    // Format number with dot separator (Vietnamese style)
+    // Example: 150000 -> "150.000"
+    if (!number && number !== 0) return '';
+    const num = parseInt(number);
+    if (isNaN(num)) return '';
+    return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+
+// Auto-calculate total amount
+function updateTotalAmount() {
+    // Remove dots before parsing
+    const inspectionRaw = document.getElementById('inspectionFee').value.replace(/\./g, '');
+    const serviceRaw = document.getElementById('serviceFee').value.replace(/\./g, '');
+    const registrationRaw = document.getElementById('registrationFee').value.replace(/\./g, '');
+    
+    const inspectionFee = parseInt(inspectionRaw) || 0;
+    const serviceFee = parseInt(serviceRaw) || 0;
+    const registrationFee = parseInt(registrationRaw) || 0;
+    
+    const total = inspectionFee + serviceFee + registrationFee;
+    document.getElementById('totalAmountDisplay').textContent = formatVND(total) + 'đ';
+}
+
+// Format input on load (convert "123000" to "123.000")
+window.addEventListener('DOMContentLoaded', function() {
+    const inspectionInput = document.getElementById('inspectionFee');
+    const serviceInput = document.getElementById('serviceFee');
+    const registrationInput = document.getElementById('registrationFee');
+    
+    // Format initial values in FORM inputs
+    if (inspectionInput.value) {
+        inspectionInput.value = formatVND(inspectionInput.value);
+    }
+    if (serviceInput.value) {
+        serviceInput.value = formatVND(serviceInput.value);
+    }
+    if (registrationInput.value) {
+        registrationInput.value = formatVND(registrationInput.value);
+    }
+    
+    // Format display values in INFO CARDS
+    const cardInspection = document.getElementById('cardInspectionFee');
+    const cardService = document.getElementById('cardServiceFee');
+    const cardRegistration = document.getElementById('cardRegistrationFee');
+    const heroTotal = document.getElementById('heroTotalAmount');
+    
+    if (cardInspection) {
+        const rawValue = cardInspection.textContent.replace(/đ/g, '').trim();
+        cardInspection.textContent = formatVND(rawValue) + 'đ';
+    }
+    if (cardService) {
+        const rawValue = cardService.textContent.replace(/đ/g, '').trim();
+        cardService.textContent = formatVND(rawValue) + 'đ';
+    }
+    if (cardRegistration) {
+        const rawValue = cardRegistration.textContent.replace(/đ/g, '').trim();
+        cardRegistration.textContent = formatVND(rawValue) + 'đ';
+    }
+    if (heroTotal) {
+        const rawValue = heroTotal.textContent.replace(/đ/g, '').trim();
+        heroTotal.textContent = formatVND(rawValue) + 'đ';
+    }
+    
+    // Update total on load
+    updateTotalAmount();
+});
+
+// Format on input (real-time)
+function formatInputOnChange(inputElement) {
+    inputElement.addEventListener('input', function() {
+        // Remove all non-digit characters
+        let value = this.value.replace(/\D/g, '');
+        
+        // Format with dots
+        if (value) {
+            value = formatVND(value);
+        }
+        this.value = value;
+        
+        // Update total
+        updateTotalAmount();
+    });
+}
+
+// Attach event listeners
+formatInputOnChange(document.getElementById('inspectionFee'));
+formatInputOnChange(document.getElementById('serviceFee'));
+formatInputOnChange(document.getElementById('registrationFee'));
+
+// Delete confirmation
+function confirmDelete() {
+    if (confirm('Bạn có chắc muốn xóa bảng giá này không?\n\nHành động này không thể hoàn tác.')) {
+        const deleteUrl = 'delete/';
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = deleteUrl;
+        
+        const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+        const csrfInput = document.createElement('input');
+        csrfInput.type = 'hidden';
+        csrfInput.name = 'csrfmiddlewaretoken';
+        csrfInput.value = csrfToken;
+        form.appendChild(csrfInput);
+        
+        const confirmInput = document.createElement('input');
+        confirmInput.type = 'hidden';
+        confirmInput.name = 'post';
+        confirmInput.value = 'yes';
+        form.appendChild(confirmInput);
+        
+        document.body.appendChild(form);
+        form.submit();
+    }
+}
+
+// Form validation
+document.getElementById('pricingForm').addEventListener('submit', function(e) {
+    const inspectionInput = document.getElementById('inspectionFee');
+    const serviceInput = document.getElementById('serviceFee');
+    const registrationInput = document.getElementById('registrationFee');
+    const effectiveFrom = document.querySelector('[name="effective_from"]').value;
+    
+    if (!inspectionInput.value || !effectiveFrom) {
+        e.preventDefault();
+        alert('Vui lòng điền đầy đủ các trường bắt buộc!');
+        return false;
+    }
+    
+    // Convert formatted values to raw numbers before submit
+    // Remove dots: "123.000" -> "123000"
+    inspectionInput.value = inspectionInput.value.replace(/\./g, '');
+    serviceInput.value = serviceInput.value.replace(/\./g, '');
+    registrationInput.value = registrationInput.value.replace(/\./g, '');
+    
+    // Validate positive amounts
+    const fees = [inspectionInput.value, serviceInput.value, registrationInput.value];
+    if (fees.some(fee => parseInt(fee) < 0)) {
+        e.preventDefault();
+        alert('Giá trị phí không được âm!');
+        return false;
+    }
+    
+    // Form will submit with raw numbers: 123000, 74000, etc.
+});
+</script>

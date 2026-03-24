@@ -1,0 +1,168 @@
+<!-- Edit Form Section -->
+<div class="vehicle-edit-section">
+    <div class="vehicle-edit-header">
+        <div class="vehicle-edit-header-left">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#667eea" stroke-width="2.5"
+                stroke-linecap="round">
+                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            <span class="vehicle-edit-title">Chỉnh sửa thông tin phương tiện</span>
+        </div>
+    </div>
+    <div class="vehicle-edit-body">
+        <form id="editVehicleForm" method="post">
+            {% csrf_token %}
+
+            <div class="vehicle-form-grid">
+                <!-- Customer -->
+                <div class="vehicle-form-group vehicle-form-group-full">
+                    <label class="vehicle-form-label">Chủ xe <span>*</span></label>
+                    <select name="customer" class="vehicle-form-input vehicle-form-select" required>
+                        {% for customer in all_customers %}
+                            <option value="{{ customer.id }}" {% if customer.id == original.customer.id %}selected{% endif %}>
+                                {{ customer.full_name }} - {{ customer.phone }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- License Plate -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Biển số xe <span>*</span></label>
+                    <input type="text" name="license_plate" class="vehicle-form-input" 
+                           value="{{ original.license_plate }}" required 
+                           placeholder="VD: 30A-12345" />
+                </div>
+
+                <!-- Vehicle Type -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Loại xe <span>*</span></label>
+                    <select name="vehicle_type" class="vehicle-form-input vehicle-form-select" required>
+                        {% for vtype in all_vehicle_types %}
+                            <option value="{{ vtype.id }}" {% if vtype.id == original.vehicle_type.id %}selected{% endif %}>
+                                {{ vtype.type_name }}
+                            </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Brand -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Hãng xe <span>*</span></label>
+                    <input type="text" name="brand" class="vehicle-form-input" 
+                           value="{{ original.brand }}" required 
+                           placeholder="VD: Toyota, Honda, ..." />
+                </div>
+
+                <!-- Model -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Dòng xe <span>*</span></label>
+                    <input type="text" name="model" class="vehicle-form-input" 
+                           value="{{ original.model }}" required 
+                           placeholder="VD: Vios, City, ..." />
+                </div>
+
+                <!-- Manufacture Year -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Năm sản xuất</label>
+                    <input type="number" name="manufacture_year" class="vehicle-form-input" 
+                           value="{{ original.manufacture_year|default:'' }}" 
+                           min="1900" max="2100" placeholder="VD: 2020" />
+                </div>
+
+                <!-- Color -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Màu sắc</label>
+                    <input type="text" name="color" class="vehicle-form-input" 
+                           value="{{ original.color|default:'' }}" 
+                           placeholder="VD: Trắng, Đen, ..." />
+                </div>
+
+                <!-- Chassis Number -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Số khung</label>
+                    <input type="text" name="chassis_number" class="vehicle-form-input" 
+                           value="{{ original.chassis_number|default:'' }}" 
+                           placeholder="VD: RLHXX1234567890" />
+                </div>
+
+                <!-- Engine Number -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Số máy</label>
+                    <input type="text" name="engine_number" class="vehicle-form-input" 
+                           value="{{ original.engine_number|default:'' }}" 
+                           placeholder="VD: 1NZFE1234567" />
+                </div>
+
+                <!-- Registration Date -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Ngày đăng ký</label>
+                    <input type="date" name="registration_date" class="vehicle-form-input" 
+                           value="{% if original.registration_date %}{{ original.registration_date|date:'Y-m-d' }}{% endif %}" />
+                </div>
+
+                <!-- Last Inspection Date -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Đăng kiểm lần cuối</label>
+                    <input type="date" name="last_inspection_date" class="vehicle-form-input" 
+                           value="{% if original.last_inspection_date %}{{ original.last_inspection_date|date:'Y-m-d' }}{% endif %}" />
+                </div>
+
+                <!-- Next Inspection Date -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Hạn đăng kiểm</label>
+                    <input type="date" name="next_inspection_date" class="vehicle-form-input" 
+                           value="{% if original.next_inspection_date %}{{ original.next_inspection_date|date:'Y-m-d' }}{% endif %}" />
+                </div>
+
+                <!-- Status -->
+                <div class="vehicle-form-group">
+                    <label class="vehicle-form-label">Trạng thái</label>
+                    <select name="status" class="vehicle-form-input vehicle-form-select">
+                        <option value="active" {% if original.status == "active" %}selected{% endif %}>Hoạt động</option>
+                        <option value="inactive" {% if original.status == "inactive" %}selected{% endif %}>Ngừng hoạt động</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Action Bar -->
+            <div class="vehicle-action-bar">
+                <div class="vehicle-action-bar-left">
+                    <button type="button" class="vehicle-btn-danger"
+                        onclick="if(confirm('Bạn có chắc chắn muốn xóa phương tiện này?')) { 
+                            const currentUrl = window.location.pathname;
+                            const deleteUrl = currentUrl.replace('/change/', '/delete/');
+                            window.location.href = deleteUrl;
+                        }">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                        </svg>
+                        Xóa phương tiện
+                    </button>
+                </div>
+                <div class="vehicle-action-bar-right">
+                    <a href="../" class="vehicle-btn-secondary">Hủy</a>
+                    <button type="submit" name="_continue" class="vehicle-btn-secondary">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5">
+                            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
+                            <polyline points="17 21 17 13 7 13 7 21" />
+                            <polyline points="7 3 7 8 15 8" />
+                        </svg>
+                        Lưu &amp; Tiếp tục
+                    </button>
+                    <button type="submit" name="_save" class="vehicle-btn-save">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Lưu thay đổi
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>

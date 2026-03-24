@@ -1,0 +1,180 @@
+<!-- Info Cards Grid -->
+{% if original %}
+<div class="dk-info-grid">
+    <!-- Trạm đăng kiểm -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-blue">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/>
+                    <circle cx="12" cy="10" r="3"/>
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Trạm đăng kiểm</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-info-row">
+                <div class="dk-info-label">Tên trạm</div>
+                <div class="dk-info-value">
+                    <a href="{% url 'admin:api_station_change' original.station.id %}" style="color:#2563eb; text-decoration:none; font-weight:600;">
+                        {{ original.station.station_name }}
+                    </a>
+                </div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Mã trạm</div>
+                <div class="dk-info-value">{{ original.station.station_code }}</div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Địa chỉ</div>
+                <div class="dk-info-value">{{ original.station.address }}</div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Điện thoại</div>
+                <div class="dk-info-value">
+                    {% if original.station.phone %}
+                    <a href="tel:{{ original.station.phone }}">{{ original.station.phone }}</a>
+                    {% else %}
+                    <span style="color:#9ca3af; font-style:italic;">Chưa cập nhật</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Thông tin khung giờ -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-green">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Thông tin khung giờ</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-info-row">
+                <div class="dk-info-label">Giờ làm việc</div>
+                <div class="dk-info-value" style="font-size:18px; font-weight:700; color:#1f2937;">
+                    {{ original.time_slot|time:"H:i" }}
+                </div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Ngày áp dụng</div>
+                <div class="dk-info-value">
+                    {% if original.day_of_week == 'all' %}
+                        <span style="display:inline-flex; align-items:center; gap:5px; background:#f3e8ff; color:#7c3aed; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                            Tất cả các ngày
+                        </span>
+                    {% elif original.day_of_week == 'monday' %}
+                        <span style="display:inline-flex; align-items:center; gap:5px; background:#dbeafe; color:#1d4ed8; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                            Thứ Hai
+                        </span>
+                    {% elif original.day_of_week == 'tuesday' %}
+                        <span style="display:inline-flex; align-items:center; gap:5px; background:#dbeafe; color:#1d4ed8; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                            Thứ Ba
+                        </span>
+                    {% elif original.day_of_week == 'wednesday' %}
+                        <span style="display:inline-flex; align-items:center; gap:5px; background:#dbeafe; color:#1d4ed8; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                            Thứ Tư
+                        </span>
+                    {% elif original.day_of_week == 'thursday' %}
+                        <span style="display:inline-flex; align-items:center; gap:5px; background:#dbeafe; color:#1d4ed8; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                            Thứ Năm
+                        </span>
+                    {% elif original.day_of_week == 'friday' %}
+                        <span style="display:inline-flex; align-items:center; gap:5px; background:#dbeafe; color:#1d4ed8; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                            Thứ Sáu
+                        </span>
+                    {% elif original.day_of_week == 'saturday' %}
+                        <span style="display:inline-flex; align-items:center; gap:5px; background:#fed7aa; color:#c2410c; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                            Thứ Bảy
+                        </span>
+                    {% elif original.day_of_week == 'sunday' %}
+                        <span style="display:inline-flex; align-items:center; gap:5px; background:#fecaca; color:#dc2626; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                            Chủ Nhật
+                        </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Thứ tự hiển thị</div>
+                <div class="dk-info-value">{{ original.display_order }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sức chứa -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-purple">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 00-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 010 7.75"/>
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Sức chứa</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-stat-grid">
+                <div class="dk-stat-box">
+                    <div class="dk-stat-number">{{ original.max_capacity }}</div>
+                    <div class="dk-stat-label">Xe / Khung giờ</div>
+                </div>
+                <div class="dk-stat-box">
+                    <div class="dk-stat-number" id="availableCapacity">-</div>
+                    <div class="dk-stat-label">Còn trống</div>
+                </div>
+            </div>
+            {% if original.notes %}
+            <div style="margin-top:14px; padding:12px; background:#f9fafb; border-radius:8px; border-left:3px solid #a855f7;">
+                <div style="font-size:12px; font-weight:600; color:#6b7280; margin-bottom:4px;">GHI CHÚ</div>
+                <div style="font-size:13px; color:#374151;">{{ original.notes }}</div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Trạng thái & Thời gian -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-orange">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Trạng thái & Thời gian</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-info-row">
+                <div class="dk-info-label">Trạng thái</div>
+                <div class="dk-info-value">
+                    {% if original.is_active %}
+                    <span style="display:inline-flex; align-items:center; gap:5px; background:#ecfdf5; color:#059669; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                        <span style="width:7px; height:7px; background:#10b981; border-radius:50%; display:inline-block;"></span>
+                        Đang hoạt động
+                    </span>
+                    {% else %}
+                    <span style="display:inline-flex; align-items:center; gap:5px; background:#fef2f2; color:#dc2626; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                        <span style="width:7px; height:7px; background:#ef4444; border-radius:50%; display:inline-block;"></span>
+                        Tạm dừng
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Ngày tạo</div>
+                <div class="dk-info-value">{{ original.created_at|date:"d/m/Y H:i" }}</div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Cập nhật lần cuối</div>
+                <div class="dk-info-value">{{ original.updated_at|date:"d/m/Y H:i" }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}

@@ -1,0 +1,149 @@
+<!-- Edit Form Section -->
+<div class="dk-edit-section">
+    <div class="dk-edit-header">
+        <div class="dk-edit-header-left">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" stroke-width="2.5" stroke-linecap="round">
+                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/>
+                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            <span class="dk-edit-title">{% if original %}Chỉnh sửa thông tin khung giờ{% else %}Tạo khung giờ mới{% endif %}</span>
+        </div>
+    </div>
+    <div class="dk-edit-body">
+        <form id="editTimeSlotForm" method="post">
+            {% csrf_token %}
+
+            <div class="dk-form-grid">
+                <!-- Trạm -->
+                <div class="dk-form-group dk-form-group-full">
+                    <label class="dk-form-label" for="id_station">Trạm đăng kiểm <span>*</span></label>
+                    <select name="station" id="id_station" class="dk-form-input dk-form-select" required>
+                        <option value="">-- Chọn trạm --</option>
+                        {% for station in stations %}
+                        <option value="{{ station.id }}" {% if original and original.station.id == station.id %}selected{% endif %}>
+                            {{ station.station_name }} ({{ station.station_code }})
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Giờ làm việc -->
+                <div class="dk-form-group">
+                    <label class="dk-form-label" for="id_time_slot">Giờ làm việc <span>*</span></label>
+                    <input 
+                        type="time" 
+                        name="time_slot" 
+                        id="id_time_slot" 
+                        class="dk-form-input" 
+                        value="{% if original %}{{ original.time_slot|time:'H:i' }}{% endif %}"
+                        required>
+                    <div class="dk-form-hint">VD: 08:00, 09:30, 14:00</div>
+                </div>
+
+                <!-- Ngày áp dụng -->
+                <div class="dk-form-group">
+                    <label class="dk-form-label" for="id_day_of_week">Ngày áp dụng <span>*</span></label>
+                    <select name="day_of_week" id="id_day_of_week" class="dk-form-input dk-form-select" required>
+                        <option value="all" {% if original and original.day_of_week == 'all' %}selected{% endif %}>Tất cả các ngày</option>
+                        <option value="monday" {% if original and original.day_of_week == 'monday' %}selected{% endif %}>Thứ Hai</option>
+                        <option value="tuesday" {% if original and original.day_of_week == 'tuesday' %}selected{% endif %}>Thứ Ba</option>
+                        <option value="wednesday" {% if original and original.day_of_week == 'wednesday' %}selected{% endif %}>Thứ Tư</option>
+                        <option value="thursday" {% if original and original.day_of_week == 'thursday' %}selected{% endif %}>Thứ Năm</option>
+                        <option value="friday" {% if original and original.day_of_week == 'friday' %}selected{% endif %}>Thứ Sáu</option>
+                        <option value="saturday" {% if original and original.day_of_week == 'saturday' %}selected{% endif %}>Thứ Bảy</option>
+                        <option value="sunday" {% if original and original.day_of_week == 'sunday' %}selected{% endif %}>Chủ Nhật</option>
+                    </select>
+                </div>
+
+                <!-- Sức chứa tối đa -->
+                <div class="dk-form-group">
+                    <label class="dk-form-label" for="id_max_capacity">Sức chứa tối đa <span>*</span></label>
+                    <input 
+                        type="number" 
+                        name="max_capacity" 
+                        id="id_max_capacity" 
+                        class="dk-form-input" 
+                        min="1" 
+                        max="100"
+                        value="{% if original %}{{ original.max_capacity }}{% else %}5{% endif %}"
+                        required>
+                    <div class="dk-form-hint">Số lượng xe tối đa trong khung giờ này</div>
+                </div>
+
+                <!-- Thứ tự hiển thị -->
+                <div class="dk-form-group">
+                    <label class="dk-form-label" for="id_display_order">Thứ tự hiển thị</label>
+                    <input 
+                        type="number" 
+                        name="display_order" 
+                        id="id_display_order" 
+                        class="dk-form-input" 
+                        min="0"
+                        value="{% if original %}{{ original.display_order }}{% else %}0{% endif %}">
+                    <div class="dk-form-hint">Số nhỏ hơn sẽ hiển thị trước</div>
+                </div>
+
+                <!-- Trạng thái -->
+                <div class="dk-form-group">
+                    <label class="dk-form-label">Trạng thái</label>
+                    <div style="display:flex; align-items:center; gap:10px; padding:12px; background:#f9fafb; border-radius:8px;">
+                        <input 
+                            type="checkbox" 
+                            name="is_active" 
+                            id="id_is_active"
+                            {% if not original or original.is_active %}checked{% endif %}>
+                        <label for="id_is_active" style="font-size:14px; font-weight:500; color:#374151; cursor:pointer;">
+                            Kích hoạt khung giờ này
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Ghi chú -->
+                <div class="dk-form-group dk-form-group-full">
+                    <label class="dk-form-label" for="id_notes">Ghi chú</label>
+                    <textarea 
+                        name="notes" 
+                        id="id_notes" 
+                        class="dk-form-input" 
+                        rows="3"
+                        placeholder="VD: Giờ cao điểm, Ưu tiên khách VIP, Nghỉ lễ, Bảo trì định kỳ...">{% if original %}{{ original.notes }}{% endif %}</textarea>
+                    <div class="dk-form-hint">Thông tin bổ sung về khung giờ này</div>
+                </div>
+            </div>
+
+            <!-- Action Bar -->
+            <div class="dk-action-bar" style="margin: 24px -24px -24px; border-radius: 0;">
+                <div class="dk-action-bar-left">
+                    {% if original %}
+                    <button type="button" class="dk-btn-danger" onclick="if(confirm('Bạn có chắc chắn muốn xóa khung giờ này?')) { window.location.href='delete/'; }">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="3 6 5 6 21 6"/>
+                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/>
+                        </svg>
+                        Xóa khung giờ
+                    </button>
+                    {% endif %}
+                </div>
+                <div class="dk-action-bar-right">
+                    <a href="../" class="dk-btn-secondary">Hủy</a>
+                    {% if original %}
+                    <button type="submit" name="_continue" value="1" class="dk-btn-secondary">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z"/>
+                            <polyline points="17 21 17 13 7 13 7 21"/>
+                            <polyline points="7 3 7 8 15 8"/>
+                        </svg>
+                        Lưu &amp; Tiếp tục
+                    </button>
+                    {% endif %}
+                    <button type="submit" name="_save" value="1" class="dk-btn-save">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                            <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        {% if original %}Lưu thay đổi{% else %}Tạo khung giờ{% endif %}
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>

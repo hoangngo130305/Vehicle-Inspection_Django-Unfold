@@ -1,0 +1,125 @@
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    console.log('✅ TimeSlot detail page loaded');
+
+    // Form validation enhancement
+    const form = document.querySelector('#editTimeSlotForm');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const submitButtons = form.querySelectorAll('button[type="submit"]');
+            submitButtons.forEach(btn => {
+                btn.disabled = true;
+                btn.style.opacity = '0.6';
+            });
+        });
+    }
+
+    // Time slot validation
+    const timeInput = document.querySelector('input[type="time"]');
+    if (timeInput) {
+        timeInput.addEventListener('change', function() {
+            const time = this.value;
+            if (time) {
+                const [hours, minutes] = time.split(':').map(Number);
+                if (hours < 6 || hours >= 18) {
+                    const confirmContinue = confirm(
+                        `⚠️ Giờ ${time} nằm ngoài giờ làm việc thông thường (06:00 - 18:00).\n\n` +
+                        `Bạn có chắc chắn muốn tiếp tục?`
+                    );
+                    if (!confirmContinue) {
+                        this.value = '';
+                        this.focus();
+                    }
+                }
+            }
+        });
+    }
+
+    // Max capacity validation
+    const capacityInput = document.querySelector('input[name="max_capacity"]');
+    if (capacityInput) {
+        capacityInput.addEventListener('change', function() {
+            const value = parseInt(this.value);
+            if (value > 20) {
+                const confirmContinue = confirm(
+                    `⚠️ Sức chứa ${value} xe/giờ khá cao.\n\n` +
+                    `Đảm bảo trạm có đủ nhân viên và trang thiết bị.\n\n` +
+                    `Bạn có chắc chắn?`
+                );
+                if (!confirmContinue) {
+                    this.value = '5';
+                    this.focus();
+                }
+            }
+            if (value < 1) {
+                alert('❌ Sức chứa phải ít nhất là 1 xe');
+                this.value = '1';
+            }
+        });
+    }
+
+    // Day of week color coding
+    const daySelect = document.querySelector('select[name="day_of_week"]');
+    if (daySelect) {
+        function updateDayColor() {
+            const value = daySelect.value;
+            
+            if (value === 'saturday') {
+                daySelect.style.backgroundColor = '#fff7ed';
+                daySelect.style.borderColor = '#fb923c';
+            } else if (value === 'sunday') {
+                daySelect.style.backgroundColor = '#fef2f2';
+                daySelect.style.borderColor = '#f87171';
+            } else if (value === 'all') {
+                daySelect.style.backgroundColor = '#f5f3ff';
+                daySelect.style.borderColor = '#a78bfa';
+            } else {
+                daySelect.style.backgroundColor = '#eff6ff';
+                daySelect.style.borderColor = '#60a5fa';
+            }
+        }
+        
+        daySelect.addEventListener('change', updateDayColor);
+        updateDayColor(); // Initial color
+    }
+
+    // Confirm before leaving with unsaved changes
+    let formChanged = false;
+    const formInputs = document.querySelectorAll('input, select, textarea');
+    
+    formInputs.forEach(input => {
+        input.addEventListener('change', () => {
+            formChanged = true;
+        });
+    });
+    
+    window.addEventListener('beforeunload', function(e) {
+        if (formChanged && form) {
+            e.preventDefault();
+            e.returnValue = '';
+            return '';
+        }
+    });
+    
+    // Reset form changed flag on submit
+    if (form) {
+        form.addEventListener('submit', function() {
+            formChanged = false;
+        });
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', function(e) {
+        // Ctrl/Cmd + S to save
+        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+            e.preventDefault();
+            if (form) {
+                const saveBtn = form.querySelector('button[name="_save"]');
+                if (saveBtn) saveBtn.click();
+            }
+        }
+    });
+
+    console.log('✅ TimeSlot form scripts initialized');
+});
+</script>

@@ -1,0 +1,638 @@
+{% extends "unfold/layouts/base.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="https://cdn.tailwindcss.com"></script>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Page Header -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Quản lý Khung giờ</h1>
+                <p class="text-gray-500 mt-1">Cấu hình khung giờ làm việc cho các trạm đăng kiểm</p>
+            </div>
+            <button
+                id="btnAddTimeSlot"
+                class="flex items-center gap-2 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="16"></line>
+                    <line x1="8" y1="12" x2="16" y2="12"></line>
+                </svg>
+                Thêm khung giờ
+            </button>
+        </div>
+
+        <!-- Search & Filter -->
+        <div class="grid grid-cols-3 gap-4">
+            <div class="relative">
+                <svg class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input
+                    type="text"
+                    id="searchInput"
+                    placeholder="Tìm kiếm theo trạm, ghi chú..."
+                    class="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+            </div>
+
+            <select id="filterStation" class="px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">🏢 Tất cả trạm</option>
+                {% for station in stations %}
+                <option value="{{ station.id }}">{{ station.station_name }}</option>
+                {% endfor %}
+            </select>
+
+            <select id="filterDayOfWeek" class="px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="">📅 Tất cả ngày</option>
+                <option value="all">Tất cả các ngày</option>
+                <option value="monday">Thứ Hai</option>
+                <option value="tuesday">Thứ Ba</option>
+                <option value="wednesday">Thứ Tư</option>
+                <option value="thursday">Thứ Năm</option>
+                <option value="friday">Thứ Sáu</option>
+                <option value="saturday">Thứ Bảy</option>
+                <option value="sunday">Chủ Nhật</option>
+            </select>
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-4 gap-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <polyline points="12 6 12 12 16 14"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Tổng khung giờ</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ total_slots }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Đang hoạt động</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ active_slots }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-purple-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-purple-600">
+                        <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
+                        <circle cx="12" cy="7" r="4"></circle>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Sức chứa TB</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ avg_capacity|floatformat:0 }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-orange-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-orange-600">
+                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect>
+                        <line x1="16" y1="2" x2="16" y2="6"></line>
+                        <line x1="8" y1="2" x2="8" y2="6"></line>
+                        <line x1="3" y1="10" x2="21" y2="10"></line>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Số trạm</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ stations_count }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TimeSlot Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gray-50 border-b border-gray-100">
+                    <tr>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">ID</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Trạm</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Giờ</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Ngày áp dụng</th>
+                        <th class="text-center px-6 py-4 text-sm font-semibold text-gray-700">Sức chứa</th>
+                        <th class="text-center px-6 py-4 text-sm font-semibold text-gray-700">Thứ tự</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Trạng thái</th>
+                        <th class="text-right px-6 py-4 text-sm font-semibold text-gray-700">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100" id="timeslotTableBody">
+                    {% for slot in timeslots %}
+                    <tr class="hover:bg-gray-50 transition-colors" data-slot-id="{{ slot.id }}" data-station-id="{{ slot.station.id }}" data-day="{{ slot.day_of_week }}">
+                        <td class="px-6 py-4">
+                            <a href="{% url 'admin:api_timeslot_change' slot.id %}" class="text-lg font-bold text-blue-600 hover:text-blue-700 hover:underline">
+                                #{{ slot.id }}
+                            </a>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div>
+                                <a href="{% url 'admin:api_station_change' slot.station.id %}" class="font-bold text-gray-900 hover:text-blue-600 hover:underline">
+                                    {{ slot.station.station_name }}
+                                </a>
+                                <p class="text-xs text-gray-500 mt-1">{{ slot.station.station_code }}</p>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            <div class="flex items-center gap-2">
+                                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-gray-400">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <polyline points="12 6 12 12 16 14"></polyline>
+                                </svg>
+                                <span class="text-lg font-bold text-gray-900">{{ slot.time_slot|time:"H:i" }}</span>
+                            </div>
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if slot.day_of_week == 'all' %}
+                                <span class="text-xs px-3 py-1 bg-purple-100 text-purple-700 rounded-full font-medium">Tất cả các ngày</span>
+                            {% elif slot.day_of_week == 'monday' %}
+                                <span class="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">Thứ Hai</span>
+                            {% elif slot.day_of_week == 'tuesday' %}
+                                <span class="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">Thứ Ba</span>
+                            {% elif slot.day_of_week == 'wednesday' %}
+                                <span class="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">Thứ Tư</span>
+                            {% elif slot.day_of_week == 'thursday' %}
+                                <span class="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">Thứ Năm</span>
+                            {% elif slot.day_of_week == 'friday' %}
+                                <span class="text-xs px-3 py-1 bg-blue-100 text-blue-700 rounded-full font-medium">Thứ Sáu</span>
+                            {% elif slot.day_of_week == 'saturday' %}
+                                <span class="text-xs px-3 py-1 bg-orange-100 text-orange-700 rounded-full font-medium">Thứ Bảy</span>
+                            {% elif slot.day_of_week == 'sunday' %}
+                                <span class="text-xs px-3 py-1 bg-red-100 text-red-700 rounded-full font-medium">Chủ Nhật</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="inline-flex items-center justify-center w-12 h-12 bg-blue-100 text-blue-700 rounded-xl font-bold text-lg">
+                                {{ slot.max_capacity }}
+                            </span>
+                        </td>
+                        <td class="px-6 py-4 text-center">
+                            <span class="text-sm font-semibold text-gray-600">{{ slot.display_order }}</span>
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if slot.is_active %}
+                                <span class="text-xs px-3 py-1 bg-green-100 text-green-700 rounded-full font-medium">🟢 Hoạt động</span>
+                            {% else %}
+                                <span class="text-xs px-3 py-1 bg-gray-100 text-gray-700 rounded-full font-medium">⚪ Tạm dừng</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <button
+                                    class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors btn-edit"
+                                    data-slot-id="{{ slot.id }}"
+                                    data-station-id="{{ slot.station.id }}"
+                                    data-time="{{ slot.time_slot|time:'H:i' }}"
+                                    data-day="{{ slot.day_of_week }}"
+                                    data-capacity="{{ slot.max_capacity }}"
+                                    data-active="{{ slot.is_active|yesno:'true,false' }}"
+                                    data-order="{{ slot.display_order }}"
+                                    data-notes="{{ slot.notes|default:'' }}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                    </svg>
+                                </button>
+                                <button
+                                    class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors btn-delete"
+                                    data-slot-id="{{ slot.id }}"
+                                    data-station="{{ slot.station.station_name }}"
+                                    data-time="{{ slot.time_slot|time:'H:i' }}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="px-6 py-12 text-center text-gray-500">
+                            Chưa có khung giờ nào
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Modal -->
+<div id="addModal" class="fixed inset-0 bg-black/50 z-50 p-4 hidden" style="display: none; align-items: center; justify-content: center;">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Thêm khung giờ mới</h2>
+        
+        <form id="addForm">
+            {% csrf_token %}
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Trạm <span class="text-red-600">*</span></label>
+                        <select
+                            id="addStation"
+                            name="station"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required>
+                            <option value="">-- Chọn trạm --</option>
+                            {% for station in stations %}
+                            <option value="{{ station.id }}">{{ station.station_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Giờ <span class="text-red-600">*</span></label>
+                        <input
+                            type="time"
+                            id="addTime"
+                            name="time_slot"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Ngày áp dụng <span class="text-red-600">*</span></label>
+                    <select
+                        id="addDayOfWeek"
+                        name="day_of_week"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                        <option value="all">Tất cả các ngày</option>
+                        <option value="monday">Thứ Hai</option>
+                        <option value="tuesday">Thứ Ba</option>
+                        <option value="wednesday">Thứ Tư</option>
+                        <option value="thursday">Thứ Năm</option>
+                        <option value="friday">Thứ Sáu</option>
+                        <option value="saturday">Thứ Bảy</option>
+                        <option value="sunday">Chủ Nhật</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Sức chứa tối đa <span class="text-red-600">*</span></label>
+                        <input
+                            type="number"
+                            id="addCapacity"
+                            name="max_capacity"
+                            min="1"
+                            max="100"
+                            value="5"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Thứ tự hiển thị</label>
+                        <input
+                            type="number"
+                            id="addOrder"
+                            name="display_order"
+                            min="0"
+                            value="0"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
+                    <textarea
+                        id="addNotes"
+                        name="notes"
+                        rows="3"
+                        placeholder="VD: Giờ cao điểm, Ưu tiên khách VIP..."
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input
+                        type="checkbox"
+                        id="addIsActive"
+                        name="is_active"
+                        checked
+                        class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                    <label for="addIsActive" class="text-sm font-semibold text-gray-700">Kích hoạt ngay</label>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-6">
+                <button
+                    type="button"
+                    id="btnCancelAdd"
+                    class="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
+                    Hủy
+                </button>
+                <button
+                    type="submit"
+                    class="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors">
+                    Thêm khung giờ
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="fixed inset-0 bg-black/50 z-50 p-4 hidden" style="display: none; align-items: center; justify-content: center;">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Chỉnh sửa khung giờ</h2>
+        
+        <form id="editForm">
+            {% csrf_token %}
+            <input type="hidden" id="editSlotId" name="timeslot_id">
+            
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Trạm <span class="text-red-600">*</span></label>
+                        <select
+                            id="editStation"
+                            name="station"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required>
+                            {% for station in stations %}
+                            <option value="{{ station.id }}">{{ station.station_name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Giờ <span class="text-red-600">*</span></label>
+                        <input
+                            type="time"
+                            id="editTime"
+                            name="time_slot"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required>
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Ngày áp dụng <span class="text-red-600">*</span></label>
+                    <select
+                        id="editDayOfWeek"
+                        name="day_of_week"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                        <option value="all">Tất cả các ngày</option>
+                        <option value="monday">Thứ Hai</option>
+                        <option value="tuesday">Thứ Ba</option>
+                        <option value="wednesday">Thứ Tư</option>
+                        <option value="thursday">Thứ Năm</option>
+                        <option value="friday">Thứ Sáu</option>
+                        <option value="saturday">Thứ Bảy</option>
+                        <option value="sunday">Chủ Nhật</option>
+                    </select>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Sức chứa tối đa <span class="text-red-600">*</span></label>
+                        <input
+                            type="number"
+                            id="editCapacity"
+                            name="max_capacity"
+                            min="1"
+                            max="100"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            required>
+                    </div>
+
+                    <div>
+                        <label class="block text-sm font-semibold text-gray-700 mb-2">Thứ tự hiển thị</label>
+                        <input
+                            type="number"
+                            id="editOrder"
+                            name="display_order"
+                            min="0"
+                            class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Ghi chú</label>
+                    <textarea
+                        id="editNotes"
+                        name="notes"
+                        rows="3"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"></textarea>
+                </div>
+
+                <div class="flex items-center gap-2">
+                    <input
+                        type="checkbox"
+                        id="editIsActive"
+                        name="is_active"
+                        class="w-5 h-5 text-blue-600 border-gray-300 rounded focus:ring-blue-500">
+                    <label for="editIsActive" class="text-sm font-semibold text-gray-700">Kích hoạt</label>
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-6">
+                <button
+                    type="button"
+                    id="btnCancelEdit"
+                    class="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
+                    Hủy
+                </button>
+                <button
+                    type="submit"
+                    class="flex-1 px-4 py-2.5 bg-blue-600 text-white rounded-xl font-semibold hover:bg-blue-700 transition-colors">
+                    Cập nhật
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const addModal = document.getElementById('addModal');
+    const editModal = document.getElementById('editModal');
+    const btnAddTimeSlot = document.getElementById('btnAddTimeSlot');
+    const btnCancelAdd = document.getElementById('btnCancelAdd');
+    const btnCancelEdit = document.getElementById('btnCancelEdit');
+    const addForm = document.getElementById('addForm');
+    const editForm = document.getElementById('editForm');
+    const searchInput = document.getElementById('searchInput');
+    const filterStation = document.getElementById('filterStation');
+    const filterDayOfWeek = document.getElementById('filterDayOfWeek');
+
+    // Show add modal
+    btnAddTimeSlot.addEventListener('click', () => {
+        addModal.classList.remove('hidden');
+        addModal.style.display = 'flex';
+    });
+
+    // Close add modal
+    btnCancelAdd.addEventListener('click', () => {
+        addModal.classList.add('hidden');
+        addModal.style.display = 'none';
+        addForm.reset();
+    });
+
+    // Close edit modal
+    btnCancelEdit.addEventListener('click', () => {
+        editModal.classList.add('hidden');
+        editModal.style.display = 'none';
+        editForm.reset();
+    });
+
+    // Close modals when clicking outside
+    [addModal, editModal].forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+                modal.style.display = 'none';
+            }
+        });
+    });
+
+    // Edit button click
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.getElementById('editSlotId').value = this.dataset.slotId;
+            document.getElementById('editStation').value = this.dataset.stationId;
+            document.getElementById('editTime').value = this.dataset.time;
+            document.getElementById('editDayOfWeek').value = this.dataset.day;
+            document.getElementById('editCapacity').value = this.dataset.capacity;
+            document.getElementById('editOrder').value = this.dataset.order;
+            document.getElementById('editNotes').value = this.dataset.notes;
+            document.getElementById('editIsActive').checked = this.dataset.active === 'true';
+            
+            editModal.classList.remove('hidden');
+            editModal.style.display = 'flex';
+        });
+    });
+
+    // Delete button click
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (confirm(`Xác nhận xóa khung giờ ${this.dataset.time} tại ${this.dataset.station}?`)) {
+                const formData = new FormData();
+                formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+                formData.append('timeslot_id', this.dataset.slotId);
+                
+                fetch('delete-timeslot-ajax/', {
+                    method: 'POST',
+                    body: formData,
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    if (data.success) {
+                        location.reload();
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Có lỗi xảy ra!');
+                });
+            }
+        });
+    });
+
+    // Search & Filter
+    function filterTable() {
+        const searchTerm = searchInput.value.toLowerCase();
+        const stationFilter = filterStation.value;
+        const dayFilter = filterDayOfWeek.value;
+        const rows = document.querySelectorAll('#timeslotTableBody tr[data-slot-id]');
+
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            const stationId = row.dataset.stationId;
+            const day = row.dataset.day;
+
+            const matchSearch = text.includes(searchTerm);
+            const matchStation = !stationFilter || stationId === stationFilter;
+            const matchDay = !dayFilter || day === dayFilter;
+
+            row.style.display = (matchSearch && matchStation && matchDay) ? '' : 'none';
+        });
+    }
+
+    searchInput.addEventListener('input', filterTable);
+    filterStation.addEventListener('change', filterTable);
+    filterDayOfWeek.addEventListener('change', filterTable);
+
+    // Add form submit
+    addForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        
+        fetch('add-timeslot-ajax/', {
+            method: 'POST',
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            if (data.success) {
+                addModal.classList.add('hidden');
+                addModal.style.display = 'none';
+                addForm.reset();
+                location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Có lỗi xảy ra!');
+        });
+    });
+
+    // Edit form submit
+    editForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(this);
+        
+        fetch('update-timeslot-ajax/', {
+            method: 'POST',
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            if (data.success) {
+                editModal.classList.add('hidden');
+                editModal.style.display = 'none';
+                editForm.reset();
+                location.reload();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Có lỗi xảy ra!');
+        });
+    });
+});
+</script>
+{% endblock %}

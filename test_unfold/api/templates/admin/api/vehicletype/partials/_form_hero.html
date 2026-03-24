@@ -1,0 +1,43 @@
+<!-- Hero Header -->
+<div class="dk-detail-hero dk-detail-hero-orange">
+    <div class="dk-hero-top">
+        <div class="dk-hero-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <rect x="1" y="3" width="15" height="13" rx="2" />
+                <path d="M16 8h2a2 2 0 012 2v6h-4" />
+                <circle cx="5.5" cy="18.5" r="2.5" />
+                <circle cx="18.5" cy="18.5" r="2.5" />
+            </svg>
+            {{ original.type_code }}
+        </div>
+        {% if original.status == "active" %}
+        <div class="dk-hero-status dk-hero-status-active">Hoạt động</div>
+        {% else %}
+        <div class="dk-hero-status dk-hero-status-inactive">Ngừng hoạt động</div>
+        {% endif %}
+    </div>
+    <h1 class="dk-hero-name">{{ original.type_name }}</h1>
+    <div class="dk-hero-address">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+        </svg>
+        Giá cơ sở: {{ original.base_price|floatformat:0 }}đ | Thứ tự hiển thị: {{ original.display_order }} | Số phương tiện: {{ original.vehicles.count }}
+    </div>
+    <div class="dk-hero-actions">
+        <a href="../" class="dk-hero-btn dk-hero-btn-white">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+            </svg>
+            Quay lại danh sách
+        </a>
+        <a href="history/" class="dk-hero-btn dk-hero-btn-white">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+            </svg>
+            Lịch sử thay đổi
+        </a>
+    </div>
+</div>

@@ -1,0 +1,49 @@
+<!-- Hero Header -->
+<div class="vehicle-hero">
+    <div class="vehicle-hero-top">
+        <div class="vehicle-hero-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M5 17h14M5 17a2 2 0 01-2-2V5a2 2 0 012-2h2M5 17a2 2 0 01-2-2V5a2 2 0 012-2h2m14 14a2 2 0 002-2V5a2 2 0 00-2-2h-2M19 17a2 2 0 002-2V5a2 2 0 00-2-2h-2m-7 14h2m-2 0a2 2 0 01-2-2m2 2a2 2 0 002-2m0 0V5m0 10a2 2 0 002-2m-2 2a2 2 0 01-2-2" />
+            </svg>
+            {{ original.license_plate }}
+        </div>
+        {% if original.next_inspection_date %}
+            {% with days_left=original.next_inspection_date|timeuntil %}
+                {% if 'ago' in days_left or days_left == '0 minutes' %}
+                    <div class="vehicle-hero-status expired">Hết hạn ĐK</div>
+                {% elif 'day' in days_left and days_left|slice:':2'|add:'0' < 31 %}
+                    <div class="vehicle-hero-status expiring">Sắp hết hạn</div>
+                {% else %}
+                    <div class="vehicle-hero-status active">Còn hạn ĐK</div>
+                {% endif %}
+            {% endwith %}
+        {% else %}
+            <div class="vehicle-hero-status expired">Chưa ĐK</div>
+        {% endif %}
+    </div>
+    <h1 class="vehicle-hero-name">{{ original.brand }} {{ original.model }} {{ original.manufacture_year }}</h1>
+    <div class="vehicle-hero-info">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+            stroke-linecap="round">
+            <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" />
+            <circle cx="12" cy="7" r="4" />
+        </svg>
+        Chủ xe: {{ original.customer.full_name }} | Loại xe: {{ original.vehicle_type.type_name }}
+    </div>
+    <div class="vehicle-hero-actions">
+        <a href="../" class="vehicle-hero-btn vehicle-hero-btn-white">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+            </svg>
+            Quay lại danh sách
+        </a>
+        <a href="history/" class="vehicle-hero-btn vehicle-hero-btn-white">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+            </svg>
+            Lịch sử thay đổi
+        </a>
+    </div>
+</div>

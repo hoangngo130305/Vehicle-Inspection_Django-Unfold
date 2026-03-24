@@ -1,0 +1,598 @@
+{% extends "unfold/layouts/base.html" %}
+{% load static %}
+
+{% block extrahead %}
+{{ block.super }}
+<script src="https://cdn.tailwindcss.com"></script>
+{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Page Header -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+        <div class="flex items-center justify-between mb-4">
+            <div>
+                <h1 class="text-2xl font-bold text-gray-900">Quản lý Phương Tiện</h1>
+                <p class="text-gray-500 mt-1">Quản lý thông tin xe của khách hàng và đăng kiểm</p>
+            </div>
+            <button
+                id="btnAddVehicle"
+                style="background: linear-gradient(to right, #3b82f6, #2563eb);"
+                class="flex items-center gap-2 px-4 py-2.5 text-white rounded-xl font-semibold hover:shadow-lg transition-all shadow-md">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+                Thêm phương tiện
+            </button>
+        </div>
+
+        <!-- Search -->
+        <div class="relative">
+            <svg class="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="11" cy="11" r="8"></circle>
+                <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+            </svg>
+            <input
+                type="text"
+                id="searchInput"
+                placeholder="Tìm kiếm theo biển số, khách hàng, hãng xe..."
+                class="w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+        </div>
+    </div>
+
+    <!-- Stats -->
+    <div class="grid grid-cols-4 gap-6">
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-blue-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-blue-600">
+                        <rect x="1" y="3" width="15" height="13"></rect>
+                        <polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon>
+                        <circle cx="5.5" cy="18.5" r="2.5"></circle>
+                        <circle cx="18.5" cy="18.5" r="2.5"></circle>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Tổng số xe</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ total_vehicles }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-green-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-green-600">
+                        <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Còn hạn</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ valid_inspection }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-yellow-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-yellow-600">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Sắp hết hạn</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ expiring_soon }}</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <div class="flex items-center gap-4">
+                <div class="w-12 h-12 bg-red-100 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="text-red-600">
+                        <line x1="18" y1="6" x2="6" y2="18"></line>
+                        <line x1="6" y1="6" x2="18" y2="18"></line>
+                    </svg>
+                </div>
+                <div>
+                    <p class="text-sm text-gray-500 mb-1">Hết hạn</p>
+                    <p class="text-4xl font-bold text-gray-900">{{ expired_inspection }}</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vehicle Table -->
+    <div class="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+        <div class="overflow-x-auto">
+            <table class="w-full">
+                <thead class="bg-gradient-to-r from-blue-50 to-indigo-50">
+                    <tr>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">ID</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Biển số</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Chủ xe</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Loại xe</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Hãng xe</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Model</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Năm SX</th>
+                        <th class="text-left px-6 py-4 text-sm font-semibold text-gray-700">Hạn ĐK</th>
+                        <th class="text-right px-6 py-4 text-sm font-semibold text-gray-700">Thao tác</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100" id="vehicleTableBody">
+                    {% for vehicle in object_list %}
+                    <tr class="hover:bg-gray-50 transition-colors">
+                        <td class="px-6 py-4 text-sm font-medium text-gray-500">
+                            #{{ vehicle.id }}
+                        </td>
+                        <td class="px-6 py-4">
+                            <a href="{% url 'admin:api_vehicle_change' vehicle.id %}" class="font-bold text-blue-600 hover:text-blue-800 hover:underline">
+                                <code class="text-sm bg-blue-50 px-2 py-1 rounded">{{ vehicle.license_plate }}</code>
+                            </a>
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-900">
+                            {% if vehicle.customer %}
+                                {{ vehicle.customer.full_name }}
+                            {% else %}
+                                <span class="text-gray-400">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4">
+                            {% if vehicle.vehicle_type %}
+                                <span class="text-xs px-2 py-1 bg-purple-100 text-purple-700 rounded-full font-medium">{{ vehicle.vehicle_type.type_name }}</span>
+                            {% else %}
+                                <span class="text-gray-400">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-sm text-gray-900">{{ vehicle.brand|default:"-" }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-900">{{ vehicle.model|default:"-" }}</td>
+                        <td class="px-6 py-4 text-sm text-gray-900">{{ vehicle.manufacture_year|default:"-" }}</td>
+                        <td class="px-6 py-4">
+                            {% if vehicle.next_inspection_date %}
+                                {% load tz %}
+                                {% now "Y-m-d" as today %}
+                                {% if vehicle.next_inspection_date|date:"Y-m-d" < today %}
+                                    <span class="text-xs px-2 py-1 bg-red-100 text-red-700 rounded-full font-medium">{{ vehicle.next_inspection_date|date:"d/m/Y" }}</span>
+                                {% else %}
+                                    <span class="text-xs px-2 py-1 bg-green-100 text-green-700 rounded-full font-medium">{{ vehicle.next_inspection_date|date:"d/m/Y" }}</span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-gray-400">-</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-6 py-4 text-right">
+                            <div class="flex items-center justify-end gap-2">
+                                <button
+                                    class="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors btn-edit"
+                                    data-id="{{ vehicle.id }}"
+                                    data-license-plate="{{ vehicle.license_plate }}"
+                                    data-customer-id="{{ vehicle.customer.id|default:'' }}"
+                                    data-vehicle-type-id="{{ vehicle.vehicle_type.id|default:'' }}"
+                                    data-brand="{{ vehicle.brand|default:'' }}"
+                                    data-model="{{ vehicle.model|default:'' }}"
+                                    data-manufacture-year="{{ vehicle.manufacture_year|default:'' }}"
+                                    data-color="{{ vehicle.color|default:'' }}"
+                                    data-chassis-number="{{ vehicle.chassis_number|default:'' }}"
+                                    data-engine-number="{{ vehicle.engine_number|default:'' }}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                        <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                                    </svg>
+                                </button>
+                                <button
+                                    class="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors btn-delete"
+                                    data-id="{{ vehicle.id }}"
+                                    data-license-plate="{{ vehicle.license_plate }}">
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <polyline points="3 6 5 6 21 6"></polyline>
+                                        <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                                    </svg>
+                                </button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="px-6 py-12 text-center text-gray-500">
+                            Không có phương tiện nào
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Add Modal -->
+<div id="addModal" class="fixed inset-0 bg-black/50 items-center justify-center z-50 p-4 hidden overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 my-8">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Thêm phương tiện mới</h2>
+        
+        <form id="addForm">
+            {% csrf_token %}
+            <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Chủ xe <span class="text-red-600">*</span></label>
+                    <select
+                        id="addCustomer"
+                        name="customer_id"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                        <option value="">-- Chọn khách hàng --</option>
+                        {% for customer in all_customers %}
+                        <option value="{{ customer.id }}">{{ customer.full_name }} - {{ customer.phone }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Biển số xe <span class="text-red-600">*</span></label>
+                    <input
+                        type="text"
+                        id="addLicensePlate"
+                        name="license_plate"
+                        placeholder="VD: 29A-12345"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Loại xe <span class="text-red-600">*</span></label>
+                    <select
+                        id="addVehicleType"
+                        name="vehicle_type_id"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                        <option value="">-- Chọn loại xe --</option>
+                        {% for vtype in all_vehicle_types %}
+                        <option value="{{ vtype.id }}">{{ vtype.type_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Hãng xe</label>
+                    <input
+                        type="text"
+                        id="addBrand"
+                        name="brand"
+                        placeholder="VD: Toyota"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Model</label>
+                    <input
+                        type="text"
+                        id="addModel"
+                        name="model"
+                        placeholder="VD: Vios"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Năm SX</label>
+                    <input
+                        type="number"
+                        id="addManufactureYear"
+                        name="manufacture_year"
+                        placeholder="VD: 2020"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Màu xe</label>
+                    <input
+                        type="text"
+                        id="addColor"
+                        name="color"
+                        placeholder="VD: Trắng"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Số khung</label>
+                    <input
+                        type="text"
+                        id="addChassisNumber"
+                        name="chassis_number"
+                        placeholder="VD: JTDBR32E500012345"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Số máy</label>
+                    <input
+                        type="text"
+                        id="addEngineNumber"
+                        name="engine_number"
+                        placeholder="VD: 2NZ1234567"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-6">
+                <button
+                    type="button"
+                    id="btnCancelAdd"
+                    class="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
+                    Hủy
+                </button>
+                <button
+                    type="submit"
+                    style="background: linear-gradient(to right, #3b82f6, #2563eb);"
+                    class="flex-1 px-4 py-2.5 text-white rounded-xl font-semibold transition-all">
+                    Thêm phương tiện
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Edit Modal -->
+<div id="editModal" class="fixed inset-0 bg-black/50 items-center justify-center z-50 p-4 hidden overflow-y-auto">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-6 my-8">
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Chỉnh sửa phương tiện</h2>
+        
+        <form id="editForm">
+            {% csrf_token %}
+            <input type="hidden" id="editId" name="id">
+            
+            <div class="grid grid-cols-2 gap-4">
+                <div class="col-span-2">
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Chủ xe <span class="text-red-600">*</span></label>
+                    <select
+                        id="editCustomer"
+                        name="customer_id"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                        <option value="">-- Chọn khách hàng --</option>
+                        {% for customer in all_customers %}
+                        <option value="{{ customer.id }}">{{ customer.full_name }} - {{ customer.phone }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Biển số xe <span class="text-red-600">*</span></label>
+                    <input
+                        type="text"
+                        id="editLicensePlate"
+                        name="license_plate"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Loại xe <span class="text-red-600">*</span></label>
+                    <select
+                        id="editVehicleType"
+                        name="vehicle_type_id"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        required>
+                        <option value="">-- Chọn loại xe --</option>
+                        {% for vtype in all_vehicle_types %}
+                        <option value="{{ vtype.id }}">{{ vtype.type_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Hãng xe</label>
+                    <input
+                        type="text"
+                        id="editBrand"
+                        name="brand"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Model</label>
+                    <input
+                        type="text"
+                        id="editModel"
+                        name="model"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Năm SX</label>
+                    <input
+                        type="number"
+                        id="editManufactureYear"
+                        name="manufacture_year"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Màu xe</label>
+                    <input
+                        type="text"
+                        id="editColor"
+                        name="color"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Số khung</label>
+                    <input
+                        type="text"
+                        id="editChassisNumber"
+                        name="chassis_number"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+
+                <div>
+                    <label class="block text-sm font-semibold text-gray-700 mb-2">Số máy</label>
+                    <input
+                        type="text"
+                        id="editEngineNumber"
+                        name="engine_number"
+                        class="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+
+            <div class="flex gap-3 mt-6">
+                <button
+                    type="button"
+                    id="btnCancelEdit"
+                    class="flex-1 px-4 py-2.5 border border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors">
+                    Hủy
+                </button>
+                <button
+                    type="submit"
+                    style="background: linear-gradient(to right, #3b82f6, #2563eb);"
+                    class="flex-1 px-4 py-2.5 text-white rounded-xl font-semibold transition-all">
+                    Cập nhật
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const addModal = document.getElementById('addModal');
+    const editModal = document.getElementById('editModal');
+    const btnAddVehicle = document.getElementById('btnAddVehicle');
+    const btnCancelAdd = document.getElementById('btnCancelAdd');
+    const btnCancelEdit = document.getElementById('btnCancelEdit');
+    const addForm = document.getElementById('addForm');
+    const editForm = document.getElementById('editForm');
+    const searchInput = document.getElementById('searchInput');
+
+    // Show add modal
+    btnAddVehicle.addEventListener('click', () => {
+        addModal.classList.remove('hidden');
+        addModal.classList.add('flex');
+    });
+
+    // Close add modal
+    btnCancelAdd.addEventListener('click', () => {
+        addModal.classList.add('hidden');
+        addModal.classList.remove('flex');
+        addForm.reset();
+    });
+
+    // Close edit modal
+    btnCancelEdit.addEventListener('click', () => {
+        editModal.classList.add('hidden');
+        editModal.classList.remove('flex');
+        editForm.reset();
+    });
+
+    // Close modals when clicking outside
+    [addModal, editModal].forEach(modal => {
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.classList.add('hidden');
+                modal.classList.remove('flex');
+            }
+        });
+    });
+
+    // Edit button click
+    document.querySelectorAll('.btn-edit').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.getElementById('editId').value = this.dataset.id;
+            document.getElementById('editLicensePlate').value = this.dataset.licensePlate;
+            document.getElementById('editCustomer').value = this.dataset.customerId;
+            document.getElementById('editVehicleType').value = this.dataset.vehicleTypeId;
+            document.getElementById('editBrand').value = this.dataset.brand;
+            document.getElementById('editModel').value = this.dataset.model;
+            document.getElementById('editManufactureYear').value = this.dataset.manufactureYear;
+            document.getElementById('editColor').value = this.dataset.color;
+            document.getElementById('editChassisNumber').value = this.dataset.chassisNumber;
+            document.getElementById('editEngineNumber').value = this.dataset.engineNumber;
+            editModal.classList.remove('hidden');
+            editModal.classList.add('flex');
+        });
+    });
+
+    // Delete button click
+    document.querySelectorAll('.btn-delete').forEach(btn => {
+        btn.addEventListener('click', function() {
+            if (confirm(`Bạn có chắc muốn xóa xe "${this.dataset.licensePlate}" không?`)) {
+                const formData = new FormData();
+                formData.append('id', this.dataset.id);
+                formData.append('csrfmiddlewaretoken', document.querySelector('[name=csrfmiddlewaretoken]').value);
+                
+                fetch('delete-ajax/', {
+                    method: 'POST',
+                    body: formData,
+                })
+                .then(response => response.json())
+                .then(data => {
+                    alert(data.message);
+                    if (data.success) window.location.reload();
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('Có lỗi xảy ra!');
+                });
+            }
+        });
+    });
+
+    // Add form submit
+    addForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(addForm);
+        
+        fetch('add-ajax/', {
+            method: 'POST',
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            if (data.success) window.location.reload();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Có lỗi xảy ra!');
+        });
+    });
+
+    // Edit form submit
+    editForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        const formData = new FormData(editForm);
+        
+        fetch('edit-ajax/', {
+            method: 'POST',
+            body: formData,
+        })
+        .then(response => response.json())
+        .then(data => {
+            alert(data.message);
+            if (data.success) window.location.reload();
+        })
+        .catch(error => {
+            console.error('Error:', error);
+            alert('Có lỗi xảy ra!');
+        });
+    });
+
+    // Search functionality
+    searchInput.addEventListener('input', function() {
+        const searchTerm = this.value.toLowerCase();
+        const rows = document.querySelectorAll('#vehicleTableBody tr');
+        
+        rows.forEach(row => {
+            const text = row.textContent.toLowerCase();
+            if (text.includes(searchTerm)) {
+                row.style.display = '';
+            } else {
+                row.style.display = 'none';
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

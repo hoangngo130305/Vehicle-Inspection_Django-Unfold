@@ -1,0 +1,114 @@
+<!-- Edit Form Section -->
+<div class="dk-edit-section">
+    <div class="dk-edit-header">
+        <div class="dk-edit-header-left">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="2.5"
+                stroke-linecap="round">
+                <path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7" />
+                <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z" />
+            </svg>
+            <span class="dk-edit-title">Chỉnh sửa thông tin loại xe</span>
+        </div>
+    </div>
+    <div class="dk-edit-body">
+        <form id="editVehicleTypeForm" method="post">
+            {% csrf_token %}
+
+            <div class="dk-form-grid">
+                <!-- Type Code -->
+                <div class="dk-form-group">
+                    <label class="dk-form-label">Mã loại xe <span>*</span></label>
+                    <input type="text" name="type_code" class="dk-form-input" 
+                           value="{{ original.type_code }}" required 
+                           placeholder="VD: CAR_4_SEAT" />
+                </div>
+
+                <!-- Type Name -->
+                <div class="dk-form-group">
+                    <label class="dk-form-label">Tên loại xe <span>*</span></label>
+                    <input type="text" name="type_name" class="dk-form-input" 
+                           value="{{ original.type_name }}" required 
+                           placeholder="VD: Xe con 4 chỗ" />
+                </div>
+
+                <!-- Base Price -->
+                <div class="dk-form-group">
+                    <label class="dk-form-label">Giá cơ sở (VNĐ) <span>*</span></label>
+                    <input type="number" name="base_price" class="dk-form-input" 
+                           value="{{ original.base_price }}" required step="0.01" min="0"
+                           placeholder="VD: 500000" />
+                </div>
+
+                <!-- Display Order -->
+                <div class="dk-form-group">
+                    <label class="dk-form-label">Thứ tự hiển thị <span>*</span></label>
+                    <input type="number" name="display_order" class="dk-form-input" 
+                           value="{{ original.display_order }}" required min="0"
+                           placeholder="VD: 1" />
+                </div>
+
+                <!-- Icon URL -->
+                <div class="dk-form-group dk-form-group-full">
+                    <label class="dk-form-label">URL Icon</label>
+                    <input type="url" name="icon_url" class="dk-form-input" 
+                           value="{{ original.icon_url|default:'' }}" 
+                           placeholder="VD: https://example.com/icons/car.svg" />
+                </div>
+
+                <!-- Description -->
+                <div class="dk-form-group dk-form-group-full">
+                    <label class="dk-form-label">Mô tả</label>
+                    <textarea name="description" class="dk-form-textarea" 
+                              placeholder="Nhập mô tả chi tiết về loại xe này...">{{ original.description|default:'' }}</textarea>
+                </div>
+
+                <!-- Status -->
+                <div class="dk-form-group">
+                    <label class="dk-form-label">Trạng thái <span>*</span></label>
+                    <select name="status" class="dk-form-select" required>
+                        <option value="active" {% if original.status == "active" %}selected{% endif %}>Hoạt động</option>
+                        <option value="inactive" {% if original.status == "inactive" %}selected{% endif %}>Ngừng hoạt động</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Action Bar -->
+            <div class="dk-action-bar">
+                <div class="dk-action-bar-left">
+                    <button type="button" class="dk-btn-danger"
+                        onclick="if(confirm('Bạn có chắc chắn muốn xóa loại xe này?\n\nCảnh báo: Hiện có {{ original.vehicles.count }} phương tiện đang sử dụng loại xe này!')) { 
+                            const currentUrl = window.location.pathname;
+                            const deleteUrl = currentUrl.replace('/change/', '/delete/');
+                            window.location.href = deleteUrl;
+                        }">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2">
+                            <polyline points="3 6 5 6 21 6" />
+                            <path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2" />
+                        </svg>
+                        Xóa loại xe
+                    </button>
+                </div>
+                <div class="dk-action-bar-right">
+                    <a href="../" class="dk-btn-secondary">Hủy</a>
+                    <button type="submit" name="_continue" class="dk-btn-secondary">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5">
+                            <path d="M19 21H5a2 2 0 01-2-2V5a2 2 0 012-2h11l5 5v11a2 2 0 01-2 2z" />
+                            <polyline points="17 21 17 13 7 13 7 21" />
+                            <polyline points="7 3 7 8 15 8" />
+                        </svg>
+                        Lưu &amp; Tiếp tục
+                    </button>
+                    <button type="submit" name="_save" class="dk-btn-save dk-btn-save-orange">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                            stroke-width="2.5">
+                            <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        Lưu thay đổi
+                    </button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>

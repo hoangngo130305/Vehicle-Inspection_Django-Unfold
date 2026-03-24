@@ -1,0 +1,54 @@
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const form = document.getElementById('editVehicleForm');
+    
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(form);
+            const submitButton = e.submitter;
+            
+            // Disable submit buttons
+            const buttons = form.querySelectorAll('button[type="submit"]');
+            buttons.forEach(btn => {
+                btn.disabled = true;
+                btn.style.opacity = '0.6';
+            });
+            
+            // Submit form
+            fetch(window.location.href, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => {
+                if (response.ok) {
+                    // Check if _continue or _save
+                    if (submitButton.name === '_continue') {
+                        window.location.reload();
+                    } else {
+                        window.location.href = '../';
+                    }
+                } else {
+                    alert('Có lỗi xảy ra. Vui lòng thử lại!');
+                    buttons.forEach(btn => {
+                        btn.disabled = false;
+                        btn.style.opacity = '1';
+                    });
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('Có lỗi xảy ra. Vui lòng thử lại!');
+                buttons.forEach(btn => {
+                    btn.disabled = false;
+                    btn.style.opacity = '1';
+                });
+            });
+        });
+    }
+});
+</script>

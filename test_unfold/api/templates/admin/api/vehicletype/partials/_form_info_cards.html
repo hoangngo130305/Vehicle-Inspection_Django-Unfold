@@ -1,0 +1,133 @@
+<!-- Info Cards Grid -->
+<div class="dk-info-grid">
+    <!-- Basic Info Card -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-orange">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <rect x="1" y="3" width="15" height="13" rx="2" />
+                    <path d="M16 8h2a2 2 0 012 2v6h-4" />
+                    <circle cx="5.5" cy="18.5" r="2.5" />
+                    <circle cx="18.5" cy="18.5" r="2.5" />
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Thông tin cơ bản</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-info-row">
+                <div class="dk-info-label">Mã loại xe</div>
+                <div class="dk-info-value">{{ original.type_code }}</div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Tên loại xe</div>
+                <div class="dk-info-value">{{ original.type_name }}</div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Thứ tự hiển thị</div>
+                <div class="dk-info-value">{{ original.display_order }}</div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Icon URL</div>
+                <div class="dk-info-value">
+                    {% if original.icon_url %}
+                    <a href="{{ original.icon_url }}" target="_blank" style="color:#f97316;">{{ original.icon_url|truncatechars:40 }}</a>
+                    {% else %}
+                    <span style="color:#9ca3af; font-style:italic;">Chưa cập nhật</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Pricing Info Card -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-green">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Thông tin giá</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-stat-grid">
+                <div class="dk-stat-box">
+                    <div class="dk-stat-number">{{ original.base_price|floatformat:0 }}đ</div>
+                    <div class="dk-stat-label">Giá cơ sở</div>
+                </div>
+            </div>
+            <div class="dk-info-row" style="margin-top: 14px;">
+                <div class="dk-info-label">Mô tả</div>
+                <div class="dk-info-value">
+                    {% if original.description %}
+                    {{ original.description }}
+                    {% else %}
+                    <span style="color:#9ca3af; font-style:italic;">Chưa có mô tả</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Vehicle Usage Card -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-blue">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2" />
+                    <circle cx="9" cy="7" r="4" />
+                    <path d="M23 21v-2a4 4 0 00-3-3.87" />
+                    <path d="M16 3.13a4 4 0 010 7.75" />
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Sử dụng</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-stat-grid">
+                <div class="dk-stat-box">
+                    <div class="dk-stat-number">{{ original.vehicles.count }}</div>
+                    <div class="dk-stat-label">Phương tiện</div>
+                </div>
+            </div>
+            <div class="dk-info-row" style="margin-top: 14px;">
+                <div class="dk-info-label">Trạng thái</div>
+                <div class="dk-info-value">
+                    {% if original.status == "active" %}
+                    <span style="display:inline-flex; align-items:center; gap:5px; background:#ecfdf5; color:#059669; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                        <span style="width:7px; height:7px; background:#10b981; border-radius:50%; display:inline-block;"></span>
+                        Hoạt động
+                    </span>
+                    {% else %}
+                    <span style="display:inline-flex; align-items:center; gap:5px; background:#fef2f2; color:#dc2626; padding:4px 12px; border-radius:16px; font-size:13px; font-weight:600;">
+                        <span style="width:7px; height:7px; background:#ef4444; border-radius:50%; display:inline-block;"></span>
+                        Ngừng hoạt động
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Time Info Card -->
+    <div class="dk-info-card">
+        <div class="dk-info-card-header">
+            <div class="dk-info-card-icon dk-info-card-icon-purple">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <circle cx="12" cy="12" r="10" />
+                    <polyline points="12 6 12 12 16 14" />
+                </svg>
+            </div>
+            <div class="dk-info-card-title">Thời gian</div>
+        </div>
+        <div class="dk-info-card-body">
+            <div class="dk-info-row">
+                <div class="dk-info-label">Ngày tạo</div>
+                <div class="dk-info-value">{{ original.created_at|date:"d/m/Y H:i" }}</div>
+            </div>
+            <div class="dk-info-row">
+                <div class="dk-info-label">Cập nhật lần cuối</div>
+                <div class="dk-info-value">{{ original.updated_at|date:"d/m/Y H:i" }}</div>
+            </div>
+        </div>
+    </div>
+</div>

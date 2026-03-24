@@ -1,0 +1,52 @@
+<!-- Hero Header -->
+<div class="checklist-detail-hero">
+    <div class="checklist-hero-top">
+        <div class="checklist-hero-badge">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <polyline points="20 6 9 17 4 12"></polyline>
+            </svg>
+            {{ original.item_key }}
+        </div>
+        {% if original.status == "active" %}
+        <div class="checklist-hero-status checklist-hero-status-active">Hoạt động</div>
+        {% else %}
+        <div class="checklist-hero-status checklist-hero-status-inactive">Không hoạt động</div>
+        {% endif %}
+    </div>
+    <h1 class="checklist-hero-name">{{ original.item_label }}</h1>
+    <div class="checklist-hero-category">
+        {% if original.category == "safety" %}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+        </svg>
+        An toàn
+        {% elif original.category == "emission" %}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+        </svg>
+        Khí thải
+        {% else %}
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+        </svg>
+        Cả hai (An toàn + Khí thải)
+        {% endif %}
+    </div>
+    <div class="checklist-hero-actions">
+        <a href="../" class="checklist-hero-btn checklist-hero-btn-white">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <line x1="19" y1="12" x2="5" y2="12" />
+                <polyline points="12 19 5 12 12 5" />
+            </svg>
+            Quay lại danh sách
+        </a>
+        <a href="history/" class="checklist-hero-btn checklist-hero-btn-white">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <circle cx="12" cy="12" r="10" />
+                <polyline points="12 6 12 12 16 14" />
+            </svg>
+            Lịch sử thay đổi
+        </a>
+    </div>
+</div>
