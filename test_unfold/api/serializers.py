@@ -387,6 +387,17 @@ class OrderSerializer(serializers.ModelSerializer):
             return str(pricing.registration_fee) if pricing else '0.00'
         except:
             return '0.00'
+    
+    # ✅✅ NEW - Status Name (24/03/2026) - Lấy tên trạng thái từ OrderStatus
+    status_name = serializers.SerializerMethodField()
+    
+    def get_status_name(self, obj):
+        """
+        Lấy tên trạng thái từ OrderStatus model
+        Trả về: 'Chờ xử lý', 'Đã xác nhận', v.v.
+        """
+        return obj.status_name if obj.status else 'Không xác định'
+    
     customer = serializers.PrimaryKeyRelatedField(
         queryset=Customer.objects.all(),
         required=False  # ✅ KHÔNG BẮT BUỘC - sẽ tự động lấy từ token
@@ -401,7 +412,7 @@ class OrderSerializer(serializers.ModelSerializer):
             # Order info
             'order_code', 'appointment_date', 'appointment_time',
             'estimated_amount', 'additional_amount', 'total_amount',
-            'status', 'priority', 'inspection_result',
+            'status', 'status_name', 'priority', 'inspection_result',
             
             # Notes
             'customer_notes', 'staff_notes', 'cancel_reason',

@@ -326,11 +326,77 @@ class OrderService(models.Model):
 
 
 # ========================================
-# 5. ORDER
+# 5A. ORDER STATUS (Quản lý trạng thái động)
+# ========================================
+
+class OrderStatus(models.Model):
+    """
+    Bảng: order_statuses
+    Quản lý các trạng thái của đơn hàng một cách động (có thể thêm/xóa/sửa tùy ý)
+    Thay vì cứng trong choices, dữ liệu được lưu trong database
+    """
+    status_code = models.CharField(
+        max_length=30,
+        unique=True,
+        help_text='Mã trạng thái (VD: pending, confirmed, assigned, v.v.)'
+    )
+    status_name = models.CharField(
+        max_length=100,
+        help_text='Tên trạng thái hiển thị (VD: Chờ xử lý, Đã xác nhận)'
+    )
+    description = models.TextField(
+        null=True,
+        blank=True,
+        help_text='Mô tả chi tiết về trạng thái này'
+    )
+    color_code = models.CharField(
+        max_length=20,
+        default='gray',
+        help_text='Mã màu để hiển thị (orange, blue, green, red, v.v.)'
+    )
+    display_order = models.IntegerField(
+        default=0,
+        help_text='Thứ tự hiển thị trong danh sách'
+    )
+    is_active = models.BooleanField(
+        default=True,
+        help_text='Trạng thái này có đang hoạt động không'
+    )
+    is_terminal = models.BooleanField(
+        default=False,
+        help_text='Trạng thái cuối cùng (không thể chuyển sang trạng thái khác)'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'order_statuses'
+        ordering = ['display_order', 'created_at']
+        verbose_name = 'Trạng thái đơn hàng'
+        verbose_name_plural = 'Trạng thái đơn hàng'
+        indexes = [
+            models.Index(fields=['status_code']),
+            models.Index(fields=['is_active']),
+        ]
+
+    def __str__(self):
+        return f"{self.status_code} - {self.status_name}"
+
+
+# ========================================
+# 5B. ORDER
 # ========================================
 
 class Order(models.Model):
-    """Bảng: orders"""
+    """
+    Bảng: orders
+    
+    ✅ UPDATED (24/03/2026): Thay đổi trạng thái từ CharField cứng thành ForeignKey
+    - Cũ: status = CharField(choices=STATUS_CHOICES)
+    - Mới: status = ForeignKey(OrderStatus) + status_name property
+    - Lợi ích: Có thể thêm/xóa/sửa trạng thái mà không cần migration
+    """
+    # ⚠️ STATUS_CHOICES LEGACY - Giữ lại để tham khảo, không dùng nữa
     STATUS_CHOICES = (
         ('pending', 'Chờ xử lý'),
         ('confirmed', 'Đã xác nhận'),
@@ -366,7 +432,33 @@ class Order(models.Model):
     estimated_amount = models.DecimalField(max_digits=10, decimal_places=2)
     additional_amount = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
     
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    # ✅ UPDATED (24/03/2026) - Status là ForeignKey đến OrderStatus
+    status = models.ForeignKey(
+        OrderStatus,
+        on_delete=models.SET_NULL,
+        related_name='orders',
+        null=True,
+        blank=True,
+        help_text='Liên kết đến bảng order_statuses để quản lý trạng thái động'
+    )
+    
+    # ⚠️ LEGACY - Giữ để reference lịch sử (có thể xóa sau khi migrate xong)
+    status_legacy = models.CharField(
+        max_length=20,
+        null=True,
+        blank=True,
+        choices=[
+            ('pending', 'Chờ xử lý'),
+            ('confirmed', 'Đã xác nhận'),
+            ('assigned', 'Đã phân công'),
+            ('in_progress', 'Đang thực hiện'),
+            ('vehicle_received', 'Đã nhận xe'),
+            ('vehicle_returned', 'Đã trả xe'),
+            ('completed', 'Hoàn thành'),
+            ('cancelled', 'Đã hủy'),
+        ],
+        help_text='DEPRECATED - Sử dụng status (FK) thay vì'
+    )
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='normal')
     inspection_result = models.CharField(max_length=20, choices=RESULT_CHOICES, default='not_started')
     
@@ -406,8 +498,18 @@ class Order(models.Model):
             self.order_code = f"DK{timezone.now().strftime('%Y%m%d')}{uuid.uuid4().hex[:6].upper()}"
         super().save(*args, **kwargs)
 
+    @property
+    def status_name(self):
+        """
+        Property để lấy tên trạng thái từ OrderStatus
+        Sử dụng: order.status_name → 'Chờ xử lý', 'Đã xác nhận', v.v.
+        """
+        if self.status:
+            return self.status.status_name
+        return 'Không xác định'
+
     def __str__(self):
-        return f"{self.order_code} - {self.customer.full_name}"
+        return f"{self.order_code} - {self.customer.full_name} ({self.status_name})"
 
 
 class OrderStatusHistory(models.Model):

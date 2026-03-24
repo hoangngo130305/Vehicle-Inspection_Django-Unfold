@@ -1363,6 +1363,39 @@ class VehicleReceiptLogInline(admin.StackedInline):
     )
 
 
+# ========================================
+# ORDER STATUS (NEW - 24/03/2026)
+# ========================================
+
+@admin.register(OrderStatus)
+class OrderStatusAdmin(admin.ModelAdmin):
+    list_display = [
+        'status_code', 'status_name', 'color_code', 'display_order', 
+        'is_active', 'is_terminal', 'created_at'
+    ]
+    list_filter = ['is_active', 'is_terminal', 'created_at']
+    list_editable = ['status_name', 'color_code', 'display_order', 'is_active', 'is_terminal']
+    search_fields = ['status_code', 'status_name']
+    readonly_fields = ['created_at', 'updated_at']
+    ordering = ['display_order', 'created_at']
+    
+    fieldsets = (
+        ('Thông tin cơ bản', {
+            'fields': ('status_code', 'status_name', 'description')
+        }),
+        ('Giao diện', {
+            'fields': ('color_code', 'display_order')
+        }),
+        ('Trạng thái', {
+            'fields': ('is_active', 'is_terminal')
+        }),
+        ('System', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
+
+
 @admin.register(Order)
 class OrderAdmin(admin.ModelAdmin):
     list_display = [
