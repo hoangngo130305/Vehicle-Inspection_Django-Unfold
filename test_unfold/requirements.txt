@@ -1,0 +1,8 @@
+django
+django-unfold
+djangorestframework
+djangorestframework-simplejwt
+django-cors-headers
+drf-yasg
+django-filter
+mysqlclient
