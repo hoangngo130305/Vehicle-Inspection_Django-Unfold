@@ -8,8 +8,73 @@ from django_filters.rest_framework import DjangoFilterBackend
 from django.contrib.auth import login, logout
 from django.contrib.auth.models import User
 from django.utils import timezone
+from django.http import HttpResponse
+from django.urls import reverse
+from django.conf import settings
+from django.core.files.base import ContentFile
+import os
+import uuid
+from io import BytesIO
+from PIL import Image
 from .models import *
 from .serializers import *
+from .utils import render_contract_docx, convert_docx_bytes_to_pdf
+
+
+def base64_to_file(base64_str, filename_prefix='signature'):
+    """
+    Convert base64 string to Django ContentFile for ImageField
+    
+    Args:
+        base64_str: Base64 string (with or without data URI prefix)
+        filename_prefix: Prefix for generated filename
+    
+    Returns:
+        ContentFile object ready for ImageField
+    """
+    if not base64_str:
+        return None
+    
+    # Remove data URI scheme if provided: data:image/png;base64,...
+    if ',' in base64_str:
+        base64_str = base64_str.split(',', 1)[1]
+    
+    # Remove whitespace/newlines
+    base64_str = ''.join(base64_str.split())
+    
+    # Fix padding
+    padding = len(base64_str) % 4
+    if padding:
+        base64_str += '=' * (4 - padding)
+    
+    # Decode from base64
+    try:
+        import base64
+        image_bytes = base64.b64decode(base64_str)
+    except Exception as e:
+        raise ValueError(f"Failed to decode base64: {type(e).__name__}: {str(e)}")
+    
+    # Validate image data (basic check)
+    if len(image_bytes) < 4:
+        raise ValueError("Invalid image data")
+    
+    # Validate image bytes using Pillow and allow WEBP
+    try:
+        with Image.open(BytesIO(image_bytes)) as img:
+            if img.format not in ('PNG', 'JPEG', 'WEBP'):
+                raise ValueError(f"Unsupported image format: {img.format} (only PNG, JPEG, WEBP are accepted)")
+            if img.format == 'WEBP':
+                ext = 'webp'
+            else:
+                ext = 'jpg' if img.format == 'JPEG' else 'png'
+    except Exception as e:
+        raise ValueError(f"Invalid signature image data: {e}")
+
+    # Generate unique filename
+    filename = f"{filename_prefix}_{uuid.uuid4().hex[:8]}.{ext}"
+    
+    # Create ContentFile
+    return ContentFile(image_bytes, name=filename)
 
 
 # ========================================
@@ -1035,6 +1100,125 @@ class OrderViewSet(viewsets.ModelViewSet):
             'order': serializer.data
         })
     
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated], url_path='generate-contract-docx')
+    def generate_contract_docx(self, request, pk=None):
+        """
+        GET /api/orders/{id}/generate-contract-docx/
+        Tạo file hợp đồng Word (.docx) + lưu vào media/contracts/
+        Hỗ trợ ?format=pdf để trả về PDF từ file DOCX đã tạo.
+        
+        Response:
+        {
+            "success": true,
+            "message": "Đã tạo hợp đồng",
+            "contract_url": "http://127.0.0.1:8000/media/contracts/order_123_abc12345.docx",
+            "file_download": <binary>
+        }
+        """
+        order = self.get_object()
+        try:
+            receipt = order.receipt_log
+        except VehicleReceiptLog.DoesNotExist:
+            return Response({'error': 'Chưa có biên bản nhận xe'}, status=400)
+
+        # Ánh xạ fields từ model
+        data = {
+            'today_date': timezone.now().strftime('%d/%m/%Y'),
+            'order_code': order.order_code,
+            'customer_name': order.customer.full_name,
+            'customer_phone': order.customer.phone,
+            'customer_address': order.customer.address or '',
+            'customer_date_of_birth': str(order.customer.date_of_birth) if order.customer.date_of_birth else '',
+            'customer_id_number': order.customer.id_number or '',
+            'customer_id_issued_date': str(order.customer.id_issued_date) if order.customer.id_issued_date else '',
+            'customer_id_issued_place': order.customer.id_issued_place or '',
+            'vehicle_brand': order.vehicle.brand or '',
+            'vehicle_plate': order.vehicle.license_plate,
+            'vehicle_chassis_number': order.vehicle.chassis_number or '',
+            'vehicle_engine_number': order.vehicle.engine_number or '',
+            'vehicle_model': order.vehicle.model or '',
+            'vehicle_year': order.vehicle.manufacture_year or '',
+            'station_name': order.station.station_name,
+            'station_address': order.station.address,
+            'staff_name': order.assigned_staff.full_name if order.assigned_staff else '',
+            'staff_code': order.assigned_staff.employee_code if order.assigned_staff else '',
+            'staff_phone': order.assigned_staff.phone if order.assigned_staff else '',
+            'odometer_reading': receipt.odometer_reading or '',
+            'fuel_level': receipt.fuel_level or '',
+            'receipt_status': receipt.status,
+            'received_at': receipt.received_at.strftime('%d/%m/%Y %H:%M') if receipt.received_at else '',
+            'additional_notes': receipt.additional_notes or '',
+        }
+
+        template_path = os.path.join(settings.BASE_DIR, 'templates', 'contract_template.docx')
+        if not os.path.exists(template_path):
+            return Response({'error': 'Template contract_template.docx không tồn tại'}, status=500)
+
+        docx_bytes = render_contract_docx(
+            template_path,
+            data,
+            customer_sig_path=getattr(receipt.customer_signature, 'path', None),
+            staff_sig_path=getattr(receipt.staff_signature, 'path', None)
+        )
+
+        output_format = request.query_params.get('format', 'docx').lower()
+        if output_format not in ('docx', 'pdf'):
+            return Response({'error': 'Invalid format. Sử dụng ?format=docx hoặc ?format=pdf'}, status=400)
+
+        try:
+            pdf_bytes = convert_docx_bytes_to_pdf(docx_bytes)
+        except Exception as e:
+            return Response({'error': f'Chuyển DOCX sang PDF thất bại: {str(e)}'}, status=500)
+
+        # ✅ Lưu file DOCX vào media/contracts/
+        docx_filename = f"order_{order.id}_{uuid.uuid4().hex[:8]}.docx"
+        docx_content = ContentFile(docx_bytes.getvalue(), name=docx_filename)
+        order.contract_document = docx_content
+
+        # ✅ Lưu file PDF vào media/contracts/
+        pdf_filename = f"order_{order.id}_{uuid.uuid4().hex[:8]}.pdf"
+        pdf_content = ContentFile(pdf_bytes.getvalue(), name=pdf_filename)
+        order.contract_document_pdf = pdf_content
+
+        order.contract_document_created_at = timezone.now()
+        order.save()
+
+        contract_pdf_download_url = request.build_absolute_uri(reverse('order-download-contract-pdf', args=[order.id]))
+
+        if output_format == 'pdf':
+            response = HttpResponse(
+                pdf_bytes.getvalue(),
+                content_type='application/pdf'
+            )
+            response['Content-Disposition'] = f'attachment; filename=hopdong_{order.order_code}.pdf'
+            response['X-Contract-PDF-URL'] = contract_pdf_download_url
+            return response
+
+        response = HttpResponse(
+            docx_bytes.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        response['Content-Disposition'] = f'attachment; filename=hopdong_{order.order_code}.docx'
+        response['X-Contract-PDF-URL'] = contract_pdf_download_url
+        return response
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated], url_path='download-contract-pdf')
+    def download_contract_pdf(self, request, pk=None):
+        """Download the saved PDF contract for this order."""
+        order = self.get_object()
+        if not order.contract_document_pdf:
+            return Response({'error': 'Chưa có file PDF hợp đồng'}, status=404)
+
+        try:
+            order.contract_document_pdf.open('rb')
+            pdf_data = order.contract_document_pdf.read()
+        finally:
+            order.contract_document_pdf.close()
+
+        response = HttpResponse(pdf_data, content_type='application/pdf')
+        response['Content-Disposition'] = f'attachment; filename=hopdong_{order.order_code}.pdf'
+        return response
+
     # ========================================
     # STAFF APIs - XEM LỊCH VÀ CẬP NHẬT
     # ========================================
@@ -1393,12 +1577,21 @@ class OrderViewSet(viewsets.ModelViewSet):
             # 4. Giấy tờ (2 fields)
             'vehicle_registration_url', 'vehicle_insurance_url',
             # 5. Ghi chú & chữ ký (2 fields)
-            'additional_notes', 'customer_signature'
+            'additional_notes', 'customer_signature', 'staff_signature'
         ]
-        
+
         for field in optional_fields:
             if field in validated_data:
-                defaults[field] = validated_data[field]
+                if field in ['customer_signature', 'staff_signature'] and validated_data[field]:
+                    try:
+                        defaults[field] = base64_to_file(validated_data[field], f"{field}")
+                    except Exception as e:
+                        return Response({
+                            'success': False,
+                            'error': f'Lỗi xử lý {field}: {str(e)}'
+                        }, status=400)
+                else:
+                    defaults[field] = validated_data[field]
         
         receipt_log, created = VehicleReceiptLog.objects.update_or_create(
             order=order,
@@ -1530,10 +1723,21 @@ class OrderViewSet(viewsets.ModelViewSet):
                 }, status=400)
         
         # 6. TẠO BIÊN BẢN với customer_signature
+        # Convert base64 to file for ImageField
+        customer_sig_file = None
+        if 'customer_signature' in data and data['customer_signature']:
+            try:
+                customer_sig_file = base64_to_file(data['customer_signature'], 'customer_sig')
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'error': f'Lỗi xử lý chữ ký khách hàng: {str(e)}'
+                }, status=400)
+        
         receipt = VehicleReceiptLog.objects.create(
             order=order,
             received_by=staff,
-            customer_signature=data['customer_signature'],
+            customer_signature=customer_sig_file,
             status='initialized',
             odometer_reading=0,
             fuel_level='half',
@@ -1758,7 +1962,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         receipt = order.receipt_log
         
         # 5. Update staff_signature
-        receipt.staff_signature = serializer.validated_data['staff_signature']
+        if 'staff_signature' in serializer.validated_data and serializer.validated_data['staff_signature']:
+            try:
+                staff_sig_file = base64_to_file(serializer.validated_data['staff_signature'], 'staff_sig')
+                receipt.staff_signature = staff_sig_file
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'error': f'Lỗi xử lý chữ ký nhân viên: {str(e)}'
+                }, status=400)
         
         # 6. Update status → completed
         receipt.status = 'completed'
@@ -1791,6 +2003,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         POST /api/orders/{id}/complete-vehicle-received/
         
         Chuyển trạng thái: VEHICLE_RECEIVED → COMPLETED
+        ✅ Tự động tạo file hợp đồng (DOCX) với dữ liệu nhận xe
         Dùng sau khi hoàn tất quá trình nhận xe
         """
         # 1. Kiểm tra quyền
@@ -1804,10 +2017,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
         
         # 2. Kiểm tra Order status (phải vehicle_received)
-        if order.status != 'vehicle_received':
+        # Note: status is ForeignKey to OrderStatus, so check status_code
+        if not order.status or order.status.status_code != 'vehicle_received':
+            current_status = order.status.status_code if order.status else 'None'
             return Response({
                 'success': False,
-                'error': f'Order phải ở trạng thái vehicle_received. Hiện tại: {order.status}'
+                'error': f'Order phải ở trạng thái vehicle_received. Hiện tại: {current_status}'
             }, status=400)
         
         # 3. Kiểm tra biên bản nhận xe tồn tại
@@ -1817,20 +2032,135 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'error': 'Chưa có biên bản nhận xe'
             }, status=404)
         
-        # 4. Update Order status → completed
-        order.status = 'completed'
+        receipt = order.receipt_log
+        
+        # 4️⃣ TỰ ĐỘNG TẠO FILE HỢP ĐỒNG
+        contract_file_url = None
+        contract_file_error = None
+
+        # Chuẩn bị data
+        authorization_start = receipt.received_at if receipt.received_at else timezone.now()
+        authorization_end = timezone.now()  # Hoặc dùng `order.completed_at` sau khi được set trong logic
+
+        data = {
+            'today_date': timezone.now().strftime('%d/%m/%Y'),
+            'order_code': order.order_code,
+            'customer_name': order.customer.full_name,
+            'customer_phone': order.customer.phone,
+            'customer_address': order.customer.address or '',
+            'customer_date_of_birth': str(order.customer.date_of_birth) if order.customer.date_of_birth else '',
+            'customer_id_number': order.customer.id_number or '',
+            'customer_id_issued_date': str(order.customer.id_issued_date) if order.customer.id_issued_date else '',
+            'customer_id_issued_place': order.customer.id_issued_place or '',
+            'vehicle_brand': order.vehicle.brand or '',
+            'vehicle_manufacturer': order.vehicle.brand or '',  # Alias for template compatibility
+            'vehicle_plate': order.vehicle.license_plate,
+            'vehicle_chassis_number': order.vehicle.chassis_number or '',
+            'vehicle_engine_number': order.vehicle.engine_number or '',
+            'vehicle_model': order.vehicle.model or '',
+            'vehicle_year': order.vehicle.manufacture_year or '',
+            'station_name': order.station.station_name,
+            'station_address': order.station.address,
+            'staff_name': order.assigned_staff.full_name if order.assigned_staff else '',
+            'staff_code': order.assigned_staff.employee_code if order.assigned_staff else '',
+            'staff_phone': order.assigned_staff.phone if order.assigned_staff else '',
+            'odometer_reading': receipt.odometer_reading or '',
+            'fuel_level': receipt.fuel_level or '',
+            'receipt_status': receipt.status,
+            'received_at': receipt.received_at.strftime('%d/%m/%Y %H:%M') if receipt.received_at else '',
+            'additional_notes': receipt.additional_notes or '',
+            'authorization_start_date': authorization_start.strftime('%d/%m/%Y'),
+            'authorization_end_date': authorization_end.strftime('%d/%m/%Y'),
+        }
+
+        template_path = os.path.join(settings.BASE_DIR, 'templates', 'contract_template.docx')
+        if not os.path.exists(template_path):
+            contract_file_error = 'Template contract_template.docx not found.'
+        else:
+            # Validate signature data before rendering
+            customer_sig_path = getattr(receipt, 'customer_signature', None)
+            staff_sig_path = getattr(receipt, 'staff_signature', None)
+            
+            # customer_signature bắt buộc (từ initialize API)
+            if not customer_sig_path:
+                contract_file_error = 'Missing customer_signature in receipt_log. Customer must initialize receipt first.'
+            else:
+                # staff_signature optional (từ finalize API, có thể chưa gọi)
+                try:
+                    # Get full file paths for ImageField
+                    customer_sig_file_path = customer_sig_path.path if customer_sig_path else None
+                    staff_sig_file_path = staff_sig_path.path if staff_sig_path else None
+                    
+                    docx_bytes = render_contract_docx(
+                        template_path,
+                        data,
+                        customer_sig_path=customer_sig_file_path,
+                        staff_sig_path=staff_sig_file_path  # Có thể None
+                    )
+
+                    try:
+                        pdf_bytes = convert_docx_bytes_to_pdf(docx_bytes)
+                    except Exception as e:
+                        raise Exception(f'Chuyển DOCX sang PDF thất bại: {type(e).__name__}: {e}')
+
+                    docx_filename = f"order_{order.id}_{uuid.uuid4().hex[:8]}.docx"
+                    docx_content = ContentFile(docx_bytes.getvalue(), name=docx_filename)
+                    order.contract_document = docx_content
+
+                    pdf_filename = f"order_{order.id}_{uuid.uuid4().hex[:8]}.pdf"
+                    pdf_content = ContentFile(pdf_bytes.getvalue(), name=pdf_filename)
+                    order.contract_document_pdf = pdf_content
+
+                    order.contract_document_created_at = timezone.now()
+                    order.save()
+
+                    # Lấy URL từ FileField PDF, tránh trả rỗng.
+                    try:
+                        contract_file_url = order.contract_document_pdf.url
+                    except Exception as ex:
+                        contract_file_error = f"contract_document_pdf.url error: {type(ex).__name__}: {str(ex)}"
+
+                except Exception as e:
+                    contract_file_error = f"Contract render error: {type(e).__name__}: {str(e)}"
+                    import traceback
+                    traceback.print_exc()
+        
+        # 5️⃣ Update Order status → completed
+        # Note: status is ForeignKey, get the OrderStatus object
+        try:
+            completed_status = OrderStatus.objects.get(status_code='completed')
+            order.status = completed_status
+        except OrderStatus.DoesNotExist:
+            # If completed status doesn't exist, just update status_legacy field
+            order.status_legacy = 'completed'
+
         order.completed_at = timezone.now()
         order.save()
-        
-        # 5. Return response
+
+        # If the contract file got saved to model but URL not set for response, fill it
+        if not contract_file_url and order.contract_document:
+            try:
+                contract_file_url = order.contract_document.url
+            except Exception:
+                contract_file_url = None
+
+        # If contract generation had no error message and still no file, set explicit note
+        if not contract_file_url and not contract_file_error:
+            contract_file_error = 'Contract generation completed but no file URL was created.'
+
+        # 6️⃣ Return response
         return Response({
             'success': True,
-            'message': 'Đã hoàn tất đơn hàng (nhận xe)',
+            'message': 'Đã hoàn tất đơn hàng (nhận xe) & tạo file hợp đồng',
             'order': {
                 'id': order.id,
                 'order_code': order.order_code,
-                'status': order.status,
-                'completed_at': order.completed_at
+                'status': order.status.status_code if order.status else 'unknown',
+                'status_name': order.status_name,
+                'completed_at': order.completed_at,
+                'contract_file': contract_file_url,
+                'contract_file_error': contract_file_error,
+                'contract_admin_link': f'http://{request.get_host()}/admin/api/order/{order.id}/change/'
             }
         }, status=200)
     
@@ -2252,8 +2582,15 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         # NHÓM G: Chữ ký khách hàng (1 field)
         if data.get('customer_signature'):
-            return_log.customer_signature = data['customer_signature']
-            return_log.customer_confirmed = True
+            try:
+                customer_sig_file = base64_to_file(data['customer_signature'], 'customer_sig_return')
+                return_log.customer_signature = customer_sig_file
+                return_log.customer_confirmed = True
+            except Exception as e:
+                return Response({
+                    'success': False,
+                    'error': f'Lỗi xử lý chữ ký khách hàng: {str(e)}'
+                }, status=400)
         
         # ⭐⭐ NEW (10/03/2026): NHÓM H - Bảng 9 hạng mục checklist
         handover_checklist = request.data.get('handover_checklist')

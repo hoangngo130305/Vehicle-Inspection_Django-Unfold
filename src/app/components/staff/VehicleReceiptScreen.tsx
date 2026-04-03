@@ -1,4 +1,4 @@
-  import { useNavigate, useParams } from 'react-router';
+import { useNavigate, useParams } from 'react-router';
   import { ArrowLeft, Check, AlertTriangle, FileText, CheckCircle, User, Edit3, CreditCard, Banknote, QrCode, Camera, X, FileCheck } from 'lucide-react';
   import { useState } from 'react';
   import { toast } from 'sonner';
@@ -22,7 +22,7 @@
   export default function VehicleReceiptScreen() {
     const navigate = useNavigate();
     const { orderId } = useParams();
-    const { getOrderById } = useStaffOrders();
+    const { getOrderById, markVehicleReceived } = useStaffOrders();
     const order = getOrderById(orderId || '');
   
     // Current step: 1, 2, or 3
@@ -247,14 +247,13 @@
       // Validate checklist
       const checklistCount = Object.values(checklist).filter(c => c.checked).length;
       if (checklistCount < 6) {
-        toast.error('Vui lòng kiểm tra ít nhất 6 hạng mục!');
+        toast.error('Vui lòng kiểm tra tối thiểu 6 hạng mục!');
         return;
       }
   
-      // Validate ảnh checklist (các item đã check phải có ảnh)
-      const checkedItemsWithoutPhoto = Object.values(checklist).filter(c => c.checked && !c.photo).length;
-      if (checkedItemsWithoutPhoto > 0) {
-        toast.error('Vui lòng chụp ảnh cho tất cả các hạng mục đã kiểm tra!');
+      // Validate note
+      if (!generalNote.trim()) {
+        toast.error('Vui lòng nhập ghi chú tình trạng xe!');
         return;
       }
   
@@ -268,6 +267,12 @@
       // Simulate saving to server
       setTimeout(() => {
         setIsSubmitting(false);
+        
+        // Mark vehicle as received in context
+        if (orderId) {
+          markVehicleReceived(orderId);
+        }
+        
         toast.success('🎉 Hoàn thành quy trình nhận xe!');
         
         // Navigate back after saving

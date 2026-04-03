@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
+from django.urls import reverse
 from .models import *
 import random
 from datetime import timedelta
@@ -338,13 +339,9 @@ class OrderSerializer(serializers.ModelSerializer):
     # ✅ EXISTING - Total amount
     total_amount = serializers.SerializerMethodField()
     
-    # ✅✅✅✅ NEW - PRICING BREAKDOWN (20/03/2026) - 3 phí từ model Pricing
-    pricing_inspection_fee = serializers.SerializerMethodField(help_text='Phí đăng kiểm')
-    pricing_service_fee = serializers.SerializerMethodField(help_text='Phí dịch vụ')
-    pricing_registration_fee = serializers.SerializerMethodField(help_text='Phí đường bộ')
-    
-    # ✅✅✅✅ NEW - SERVICES (17/03/2026) - Danh sách dịch vụ trong đơn hàng
-    services = OrderServiceSerializer(many=True, read_only=True)
+    # ✅✅✅✅ NEW - FEES (17/03/2026) - Danh sách các khoản phí + PRICING BREAKDOWN
+    fees = serializers.SerializerMethodField()
+    contract_document_pdf_url = serializers.SerializerMethodField()
     
     # ✅✅✅ NEW - PICKUP LOCATION (3 fields) - 16/03/2026 - Cho driver tracking
     pickup_address = serializers.CharField(required=False, allow_blank=True, allow_null=True)
@@ -355,41 +352,57 @@ class OrderSerializer(serializers.ModelSerializer):
         total = obj.estimated_amount + obj.additional_amount
         return f"{total:.2f}"
     
-    def get_pricing_inspection_fee(self, obj):
-        """Lấy Phí đăng kiểm từ bảng Pricing"""
+    def get_fees(self, obj):
+        """Trả về danh sách các khoản phí chi tiết"""
+        fees_data = []
+        
+        # Lấy thông tin pricing từ vehicle type
         try:
             pricing = obj.vehicle.vehicle_type.pricings.filter(
                 effective_from__lte=obj.created_at,
                 status='active'
             ).last()
-            return str(pricing.inspection_fee) if pricing else '0.00'
+            if pricing:
+                # Thêm Inspection Fee
+                if pricing.inspection_fee > 0:
+                    fees_data.append({
+                        'fee_code': 'INSPECTION_FEE',
+                        'fee_name': 'Phí kiểm định',
+                        'amount': int(pricing.inspection_fee)
+                    })
+                
+                # Thêm Service Fee
+                if pricing.service_fee > 0:
+                    fees_data.append({
+                        'fee_code': 'SERVICE_FEE',
+                        'fee_name': 'Phí dịch vụ',
+                        'amount': int(pricing.service_fee)
+                    })
+                
+                # Thêm Road Tax Fee
+                if pricing.registration_fee > 0:
+                    fees_data.append({
+                        'fee_code': 'REGISTRATION_FEE',
+                        'fee_name': 'Phí đường bộ',
+                        'amount': int(pricing.registration_fee)
+                    })
         except:
-            return '0.00'
-    
-    def get_pricing_service_fee(self, obj):
-        """Lấy Phí dịch vụ từ bảng Pricing"""
+            pass
+        
+        return fees_data
+
+    def get_contract_document_pdf_url(self, obj):
+        request = self.context.get('request')
+        if not request or not obj.contract_document_pdf:
+            return None
         try:
-            pricing = obj.vehicle.vehicle_type.pricings.filter(
-                effective_from__lte=obj.created_at,
-                status='active'
-            ).last()
-            return str(pricing.service_fee) if pricing else '0.00'
-        except:
-            return '0.00'
+            return request.build_absolute_uri(reverse('order-download-contract-pdf', args=[obj.id]))
+        except Exception:
+            return None
     
-    def get_pricing_registration_fee(self, obj):
-        """Lấy Phí đường bộ từ bảng Pricing"""
-        try:
-            pricing = obj.vehicle.vehicle_type.pricings.filter(
-                effective_from__lte=obj.created_at,
-                status='active'
-            ).last()
-            return str(pricing.registration_fee) if pricing else '0.00'
-        except:
-            return '0.00'
-    
-    # ✅✅ NEW - Status Name (24/03/2026) - Lấy tên trạng thái từ OrderStatus
-    status_name = serializers.SerializerMethodField()
+    # ✅✅ NEW - Payment Info (26/03/2026)
+    payment_method_name = serializers.SerializerMethodField()
+    payment_status_name = serializers.SerializerMethodField()
     
     def get_status_name(self, obj):
         """
@@ -397,6 +410,20 @@ class OrderSerializer(serializers.ModelSerializer):
         Trả về: 'Chờ xử lý', 'Đã xác nhận', v.v.
         """
         return obj.status_name if obj.status else 'Không xác định'
+    
+    def get_payment_method_name(self, obj):
+        """
+        Lấy tên phương thức thanh toán user-friendly
+        """
+        if not obj.payment_method:
+            return ''
+        return dict(obj.PAYMENT_METHOD_CHOICES).get(obj.payment_method, obj.payment_method)
+    
+    def get_payment_status_name(self, obj):
+        """
+        Lấy tên trạng thái thanh toán user-friendly
+        """
+        return dict(obj.PAYMENT_STATUS_CHOICES).get(obj.payment_status, obj.payment_status)
     
     customer = serializers.PrimaryKeyRelatedField(
         queryset=Customer.objects.all(),
@@ -416,6 +443,10 @@ class OrderSerializer(serializers.ModelSerializer):
             
             # Notes
             'customer_notes', 'staff_notes', 'cancel_reason',
+            
+            # ✅✅ NEW - Payment Info (26/03/2026)
+            'payment_method', 'payment_status', 'payment_completed_at',
+            'payment_method_name', 'payment_status_name',
             
             # Timestamps
             'started_at', 'completed_at', 'created_at', 'updated_at',
@@ -445,12 +476,10 @@ class OrderSerializer(serializers.ModelSerializer):
             
             # ✅✅✅ NEW - Pickup location (3 fields) - 16/03/2026
             'pickup_address', 'pickup_lat', 'pickup_lng',
+            'contract_document_pdf_url',
             
-            # ✅✅✅✅ NEW - Pricing breakdown (20/03/2026)
-            'pricing_inspection_fee', 'pricing_service_fee', 'pricing_registration_fee',
-            
-            # ✅✅✅✅ NEW - Services (17/03/2026)
-            'services',
+            # ✅✅✅✅ NEW - Fees (17/03/2026) - Bao gồm pricing breakdown
+            'fees',
         ]
         read_only_fields = ['order_code', 'created_at', 'updated_at']
 
@@ -610,7 +639,7 @@ class VehicleReceiptLogCreateSerializer(serializers.Serializer):
     """
     # Bước 1: Thông tin khách hàng (CẬP NHẬT vào Customer)
     customer_info = serializers.DictField(required=False, help_text='Thông tin khách hàng cho hợp đồng')
-    customer_signature = serializers.CharField(required=False, help_text='Chữ ký khách hàng (base64)')
+    customer_signature = serializers.CharField(required=False, help_text='Chữ ký khách hàng (base64 hoặc file upload)')
     
     # Bước 2: Thanh toán
     payment_method = serializers.ChoiceField(

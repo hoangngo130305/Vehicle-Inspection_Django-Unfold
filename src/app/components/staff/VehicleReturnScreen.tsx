@@ -1,5 +1,5 @@
 import { useNavigate, useParams } from 'react-router';
-import { ArrowLeft, Camera, Check, AlertTriangle, FileText, CheckCircle, X, Edit3, DollarSign, Plus, Trash2, CreditCard, Banknote, QrCode } from 'lucide-react';
+import { ArrowLeft, Camera, Check, AlertTriangle, FileText, CheckCircle, X, Edit3, DollarSign, Plus, Trash2, CreditCard, Banknote, QrCode, Upload, File } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useStaffOrders } from '@/app/contexts/StaffOrdersContext';
@@ -13,6 +13,12 @@ interface AdditionalCost {
   id: string;
   description: string;
   amount: number;
+}
+
+interface InspectionDocument {
+  url: string | null;
+  number: string;
+  expiryDate: string;
 }
 
 export default function VehicleReturnScreen() {
@@ -41,6 +47,18 @@ export default function VehicleReturnScreen() {
     interior: { checked: false, photo: null },
     documents: { checked: false, photo: null },
     inspection_sticker: { checked: false, photo: null },
+  });
+
+  // 2.5. Giấy tờ kiểm định (NEW - 10/03/2026)
+  const [inspectionDocuments, setInspectionDocuments] = useState({
+    // BẮT BUỘC
+    registration: { url: null as string | null, number: '' }, // Giấy đăng ký xe
+    sticker: { url: null as string | null, number: '', expiryDate: '' }, // Tem đăng kiểm
+    otherDocs: [] as string[], // Tài liệu khác (ít nhất 1 file)
+    
+    // TÙY CHỌN
+    receipt: { url: null as string | null, number: '' }, // Biên lai
+    certificate: { url: null as string | null, number: '', expiryDate: '' }, // Giấy chứng nhận
   });
 
   // 3. Chi phí phát sinh
@@ -480,6 +498,217 @@ export default function VehicleReturnScreen() {
                 )}
               </div>
             ))}
+          </div>
+        </div>
+
+        {/* 2.5. Giấy tờ kiểm định (NEW - 10/03/2026) */}
+        <div className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+          <h3 className="font-bold text-gray-900 mb-3 flex items-center gap-2">
+            <File size={18} className="text-gray-600" />
+            2.5. Giấy tờ kiểm định
+          </h3>
+          <p className="text-xs text-gray-600 mb-3 bg-gray-50 p-2 rounded-lg">
+            ⚠️ Bắt buộc tải lên các giấy tờ kiểm định
+          </p>
+          <div className="space-y-3">
+            {/* Giấy đăng ký xe */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                <File size={16} className="text-gray-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">Giấy đăng ký xe</p>
+                <p className="text-xs text-gray-500">Số: {inspectionDocuments.registration.number}</p>
+              </div>
+              <button
+                onClick={() => {
+                  const fileInput = document.createElement('input');
+                  fileInput.type = 'file';
+                  fileInput.accept = 'image/*';
+                  fileInput.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (e) => {
+                        setInspectionDocuments({
+                          ...inspectionDocuments,
+                          registration: {
+                            url: e.target?.result as string,
+                            number: inspectionDocuments.registration.number,
+                          },
+                        });
+                        toast.success('Đã tải lên giấy đăng ký xe!');
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  };
+                  fileInput.click();
+                }}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Upload size={16} />
+              </button>
+            </div>
+
+            {/* Tem đăng kiểm */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                <File size={16} className="text-gray-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">Tem đăng kiểm</p>
+                <p className="text-xs text-gray-500">Số: {inspectionDocuments.sticker.number}</p>
+                <p className="text-xs text-gray-500">Hạn sử dụng: {inspectionDocuments.sticker.expiryDate}</p>
+              </div>
+              <button
+                onClick={() => {
+                  const fileInput = document.createElement('input');
+                  fileInput.type = 'file';
+                  fileInput.accept = 'image/*';
+                  fileInput.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (e) => {
+                        setInspectionDocuments({
+                          ...inspectionDocuments,
+                          sticker: {
+                            url: e.target?.result as string,
+                            number: inspectionDocuments.sticker.number,
+                            expiryDate: inspectionDocuments.sticker.expiryDate,
+                          },
+                        });
+                        toast.success('Đã tải lên tem đăng kiểm!');
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  };
+                  fileInput.click();
+                }}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Upload size={16} />
+              </button>
+            </div>
+
+            {/* Các giấy tờ khác */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                <File size={16} className="text-gray-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">Các giấy tờ khác</p>
+                <p className="text-xs text-gray-500">({inspectionDocuments.otherDocs.length} file)</p>
+              </div>
+              <button
+                onClick={() => {
+                  const fileInput = document.createElement('input');
+                  fileInput.type = 'file';
+                  fileInput.accept = 'image/*';
+                  fileInput.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (e) => {
+                        setInspectionDocuments({
+                          ...inspectionDocuments,
+                          otherDocs: [
+                            ...inspectionDocuments.otherDocs,
+                            e.target?.result as string,
+                          ],
+                        });
+                        toast.success('Đã tải lên giấy tờ khác!');
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  };
+                  fileInput.click();
+                }}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Upload size={16} />
+              </button>
+            </div>
+
+            {/* Biên lai */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                <File size={16} className="text-gray-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">Biên lai</p>
+                <p className="text-xs text-gray-500">Số: {inspectionDocuments.receipt.number}</p>
+              </div>
+              <button
+                onClick={() => {
+                  const fileInput = document.createElement('input');
+                  fileInput.type = 'file';
+                  fileInput.accept = 'image/*';
+                  fileInput.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (e) => {
+                        setInspectionDocuments({
+                          ...inspectionDocuments,
+                          receipt: {
+                            url: e.target?.result as string,
+                            number: inspectionDocuments.receipt.number,
+                          },
+                        });
+                        toast.success('Đã tải lên biên lai!');
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  };
+                  fileInput.click();
+                }}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Upload size={16} />
+              </button>
+            </div>
+
+            {/* Giấy chứng nhận kiểm định */}
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-gray-200 rounded-full flex items-center justify-center">
+                <File size={16} className="text-gray-400" />
+              </div>
+              <div className="flex-1">
+                <p className="text-sm font-medium text-gray-900">Giấy chứng nhận kiểm định</p>
+                <p className="text-xs text-gray-500">Số: {inspectionDocuments.certificate.number}</p>
+                <p className="text-xs text-gray-500">Hạn sử dụng: {inspectionDocuments.certificate.expiryDate}</p>
+              </div>
+              <button
+                onClick={() => {
+                  const fileInput = document.createElement('input');
+                  fileInput.type = 'file';
+                  fileInput.accept = 'image/*';
+                  fileInput.onchange = (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0];
+                    if (file) {
+                      const reader = new FileReader();
+                      reader.onload = (e) => {
+                        setInspectionDocuments({
+                          ...inspectionDocuments,
+                          certificate: {
+                            url: e.target?.result as string,
+                            number: inspectionDocuments.certificate.number,
+                            expiryDate: inspectionDocuments.certificate.expiryDate,
+                          },
+                        });
+                        toast.success('Đã tải lên giấy chứng nhận kiểm định!');
+                      };
+                      reader.readAsDataURL(file);
+                    }
+                  };
+                  fileInput.click();
+                }}
+                className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+              >
+                <Upload size={16} />
+              </button>
+            </div>
           </div>
         </div>
 

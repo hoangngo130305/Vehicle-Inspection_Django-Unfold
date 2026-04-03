@@ -1401,9 +1401,9 @@ class OrderAdmin(admin.ModelAdmin):
     list_display = [
         'id', 'order_code', 'get_vehicle_plate', 'get_customer_name', 
         'station', 'get_staff_assignment', 'status', 'priority', 
-        'total_amount_display', 'appointment_date', 'created_at'
+        'total_amount_display', 'get_payment_info', 'appointment_date', 'created_at'
     ]
-    list_filter = ['status', 'priority', 'inspection_result', 'station', 'created_at']
+    list_filter = ['status', 'priority', 'inspection_result', 'station', 'payment_status', 'created_at']
     search_fields = [
         'order_code', 
         'customer__full_name', 
@@ -1412,7 +1412,7 @@ class OrderAdmin(admin.ModelAdmin):
         'assigned_staff__full_name',
         'assigned_staff__employee_code'
     ]
-    readonly_fields = ['order_code', 'created_at', 'updated_at', 'confirmed_at', 'cancelled_at']
+    readonly_fields = ['order_code', 'created_at', 'updated_at', 'confirmed_at', 'cancelled_at', 'contract_document_created_at', 'payment_completed_at']
     inlines = [VehicleReceiptLogInline, OrderStatusHistoryInline, OrderChecklistInline, OrderServiceInline]
     
     # ✅ THÊM: Actions để bulk assign staff
@@ -1435,9 +1435,13 @@ class OrderAdmin(admin.ModelAdmin):
             'fields': ('appointment_date', 'appointment_time')
         }),
         ('Thanh toán', {
-            'fields': ('estimated_amount', 'additional_amount')
+            'fields': ('estimated_amount', 'additional_amount', 'payment_method', 'payment_status', 'payment_completed_at')
         }),
-        ('🚗 Driver Location Tracking (13/03/2026)', {
+        ('� Hợp đồng (26/03/2026)', {
+            'fields': ('contract_document_pdf', 'contract_document', 'contract_document_created_at'),
+            'description': 'File hợp đồng ủy quyền (.pdf) được tạo tự động từ API; giữ lại DOCX ở trường contract_document'
+        }),
+        ('�🚗 Driver Location Tracking (13/03/2026)', {
             'fields': (
                 'pickup_address', 
                 ('pickup_lat', 'pickup_lng'),
@@ -1468,6 +1472,24 @@ class OrderAdmin(admin.ModelAdmin):
         return obj.customer.full_name if obj.customer else '-'
     get_customer_name.short_description = 'Khách hàng'
     get_customer_name.admin_order_field = 'customer__full_name'
+    
+    def get_payment_info(self, obj):
+        """Hiển thị thông tin thanh toán"""
+        from django.utils.html import format_html
+        
+        method = obj.get_payment_method_display() if obj.payment_method else ''
+        status = obj.get_payment_status_display()
+        
+        if obj.payment_status == 'paid':
+            color = 'green'
+        else:
+            color = 'red'
+            
+        return format_html(
+            '<span style="color: {};">{}<br><small>{}</small></span>',
+            color, status, method
+        )
+    get_payment_info.short_description = 'Thanh toán'
     
     def get_staff_assignment(self, obj):
         """✅ Hiển thị button phân công nhân viên theo design AdminOrdersScreen.tsx"""

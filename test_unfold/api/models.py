@@ -42,7 +42,7 @@ class Customer(models.Model):
     facebook_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
     apple_id = models.CharField(max_length=255, unique=True, null=True, blank=True)
     
-    # Verification
+    # Verification  
     phone_verified = models.BooleanField(default=False)
     email_verified = models.BooleanField(default=False)
     
@@ -485,6 +485,51 @@ class Order(models.Model):
     driver_current_lat = models.DecimalField(max_digits=10, decimal_places=8, null=True, blank=True, help_text='Vĩ độ tài xế (real-time)')
     driver_current_lng = models.DecimalField(max_digits=11, decimal_places=8, null=True, blank=True, help_text='Kinh độ tài xế (real-time)')
     driver_location_updated_at = models.DateTimeField(null=True, blank=True, help_text='Thời gian cập nhật vị trí cuối cùng')
+    
+    # ✅ NEW - CONTRACT DOCUMENT (26/03/2026)
+    contract_document = models.FileField(
+        upload_to='contracts/',
+        null=True,
+        blank=True,
+        help_text='File hợp đồng ủy quyền (DOCX)'
+    )
+    contract_document_pdf = models.FileField(
+        upload_to='contracts/',
+        null=True,
+        blank=True,
+        help_text='File hợp đồng ủy quyền (PDF)'
+    )
+    contract_document_created_at = models.DateTimeField(null=True, blank=True, help_text='Thời gian tạo hợp đồng')
+    
+    # ✅✅ NEW - PAYMENT INFO (26/03/2026)
+    PAYMENT_METHOD_CHOICES = (
+        ('cash', 'Tiền mặt'),
+        ('bank_transfer', 'Chuyển khoản'),
+        ('vietqr', 'VietQR'),
+        ('momo', 'Momo'),
+        ('zalopay', 'ZaloPay'),
+        ('vnpay', 'VNPay'),
+    )
+    
+    PAYMENT_STATUS_CHOICES = (
+        ('unpaid', 'Chưa thanh toán'),
+        ('paid', 'Đã thanh toán'),
+    )
+    
+    payment_method = models.CharField(
+        max_length=20,
+        choices=PAYMENT_METHOD_CHOICES,
+        null=True,
+        blank=True,
+        help_text='Phương thức thanh toán: cash/transfer'
+    )
+    payment_status = models.CharField(
+        max_length=20,
+        choices=PAYMENT_STATUS_CHOICES,
+        default='unpaid',
+        help_text='Trạng thái thanh toán: unpaid/paid'
+    )
+    payment_completed_at = models.DateTimeField(null=True, blank=True, help_text='Thời gian hoàn tất thanh toán')
 
     class Meta:
         db_table = 'orders'
@@ -632,8 +677,8 @@ class VehicleReceiptLog(models.Model):
     additional_notes = models.TextField(null=True, blank=True, help_text='Ghi chú thêm')
     special_requests = models.TextField(null=True, blank=True, help_text='Yêu cầu đặc biệt')
     customer_confirmed = models.BooleanField(default=False, help_text='Khách đã xác nhận')
-    customer_signature = models.TextField(null=True, blank=True, help_text='Chữ ký khách hàng (base64)')
-    staff_signature = models.TextField(null=True, blank=True, help_text='Chữ ký nhân viên (base64)')
+    customer_signature = models.ImageField(upload_to='signatures/', null=True, blank=True, help_text='Chữ ký khách hàng (upload file)')
+    staff_signature = models.ImageField(upload_to='signatures/', null=True, blank=True, help_text='Chữ ký nhân viên (upload file)')
     
     # Timestamps
     created_at = models.DateTimeField(auto_now_add=True)
@@ -775,8 +820,8 @@ class VehicleReturnLog(models.Model):
     
     # ===== XÁC NHẬN =====
     customer_confirmed = models.BooleanField(default=False, help_text='Khách hàng đã xác nhận nhận xe')
-    customer_signature = models.TextField(null=True, blank=True, help_text='Chữ ký điện tử khách (base64)')
-    staff_signature = models.TextField(null=True, blank=True, help_text='Chữ ký điện tử nhân viên (base64)')
+    customer_signature = models.ImageField(upload_to='signatures/', null=True, blank=True, help_text='Chữ ký khách hàng (upload file)')
+    staff_signature = models.ImageField(upload_to='signatures/', null=True, blank=True, help_text='Chữ ký nhân viên (upload file)')
     
     # ===== ✅✅ NEW - BIÊN BẢN BÀN GIAO 9 HẠNG MỤC (10/03/2026) =====
     handover_checklist = models.JSONField(
@@ -1314,3 +1359,18 @@ def add_staff_to_group(sender, instance, created, **kwargs):
         instance.user.groups.add(group)
         instance.user.is_staff = True
         instance.user.save()
+
+
+@receiver(post_save, sender=Payment)
+def update_order_payment_status(sender, instance, **kwargs):
+    """Tự động cập nhật payment_status trong Order khi Payment thay đổi"""
+    if instance.status == 'paid':
+        instance.order.payment_status = 'paid'
+        instance.order.payment_method = instance.payment_method
+        instance.order.payment_completed_at = instance.paid_at or timezone.now()
+        instance.order.save(update_fields=['payment_status', 'payment_method', 'payment_completed_at'])
+    elif instance.status in ['pending', 'failed']:
+        instance.order.payment_status = 'unpaid'
+        instance.order.payment_method = None
+        instance.order.payment_completed_at = None
+        instance.order.save(update_fields=['payment_status', 'payment_method', 'payment_completed_at'])
