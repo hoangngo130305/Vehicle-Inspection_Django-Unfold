@@ -107,6 +107,55 @@ ORDER_STATUS_LABELS = {
     'cancelled': 'Đã hủy',
 }
 
+STAFF_NOTIFICATION_SETTING_DEFINITIONS = [
+    {
+        'id': 'admin-status-change',
+        'title': 'Admin thay đổi trạng thái',
+        'description': 'Nhận thông báo khi admin thay đổi trạng thái đơn hàng',
+        'default_enabled': True,
+    },
+    {
+        'id': 'new-order',
+        'title': 'Đơn hàng mới',
+        'description': 'Nhận thông báo khi có đơn hàng mới được phân công',
+        'default_enabled': True,
+    },
+    {
+        'id': 'order-update',
+        'title': 'Cập nhật đơn hàng',
+        'description': 'Nhận thông báo khi khách hàng thay đổi thông tin',
+        'default_enabled': True,
+    },
+    {
+        'id': 'customer-message',
+        'title': 'Tin nhắn khách hàng',
+        'description': 'Nhận thông báo khi có tin nhắn mới từ khách hàng',
+        'default_enabled': True,
+    },
+    {
+        'id': 'payment-received',
+        'title': 'Thanh toán thành công',
+        'description': 'Nhận thông báo khi khách hàng thanh toán',
+        'default_enabled': True,
+    },
+    {
+        'id': 'schedule-reminder',
+        'title': 'Nhắc lịch hẹn',
+        'description': 'Nhắc nhở trước 30 phút khi có lịch hẹn',
+        'default_enabled': True,
+    },
+    {
+        'id': 'rating-received',
+        'title': 'Đánh giá mới',
+        'description': 'Nhận thông báo khi khách hàng đánh giá dịch vụ',
+        'default_enabled': True,
+    },
+]
+
+STAFF_NOTIFICATION_SETTING_ID_SET = {
+    item['id'] for item in STAFF_NOTIFICATION_SETTING_DEFINITIONS
+}
+
 
 def get_order_status_code(order):
     if order.status_id and getattr(order.status, 'status_code', None):
@@ -907,6 +956,49 @@ class StaffViewSet(viewsets.ReadOnlyModelViewSet):
         
         serializer = self.get_serializer(request.user.staff_profile)
         return Response(serializer.data)
+
+    @action(detail=False, methods=['put'])
+    def update_profile(self, request):
+        """
+        PUT /api/staff/update_profile/
+        Cập nhật thông tin cá nhân của staff hiện tại.
+
+        Hỗ trợ các field:
+        - full_name, phone, avatar_url, position
+        - birth_date, gender, address
+        - email (trong bảng auth_user)
+        """
+        if not hasattr(request.user, 'staff_profile'):
+            return Response({'error': 'Không phải staff'}, status=403)
+
+        staff = request.user.staff_profile
+
+        # Nếu cập nhật phone, kiểm tra trùng với staff khác để tránh nhầm role lúc đăng nhập
+        new_phone = request.data.get('phone')
+        if new_phone and Staff.objects.filter(phone=new_phone).exclude(id=staff.id).exists():
+            return Response({
+                'error': 'Số điện thoại đã được sử dụng bởi nhân viên khác'
+            }, status=400)
+
+        allowed_staff_fields = [
+            'full_name', 'phone', 'avatar_url', 'position',
+            'birth_date', 'gender', 'address'
+        ]
+        for field in allowed_staff_fields:
+            if field in request.data:
+                setattr(staff, field, request.data.get(field))
+
+        if 'email' in request.data:
+            request.user.email = request.data.get('email') or ''
+            request.user.save(update_fields=['email'])
+
+        staff.save()
+        serializer = self.get_serializer(staff)
+        return Response({
+            'success': True,
+            'message': 'Cập nhật thông tin cá nhân thành công',
+            'data': serializer.data
+        }, status=200)
     
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def my_schedule(self, request):
@@ -1004,6 +1096,132 @@ class StaffViewSet(viewsets.ReadOnlyModelViewSet):
             },
             'orders': serializer.data
         })
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated], url_path='change-password')
+    def change_password(self, request):
+        """
+        POST /api/staff/change-password/
+        Đổi mật khẩu cho staff đang đăng nhập.
+
+        Body:
+        {
+            "old_password": "old123",
+            "new_password": "new123456",
+            "confirm_password": "new123456"
+        }
+        """
+        if not hasattr(request.user, 'staff_profile'):
+            return Response({'error': 'Không phải staff'}, status=403)
+
+        old_password = request.data.get('old_password', '')
+        new_password = request.data.get('new_password', '')
+        confirm_password = request.data.get('confirm_password', '')
+
+        if not old_password or not new_password:
+            return Response({
+                'error': 'Vui lòng nhập old_password và new_password'
+            }, status=400)
+
+        if not request.user.check_password(old_password):
+            return Response({
+                'error': 'Mật khẩu hiện tại không đúng'
+            }, status=400)
+
+        if len(new_password) < 6:
+            return Response({
+                'error': 'Mật khẩu mới phải có ít nhất 6 ký tự'
+            }, status=400)
+
+        if confirm_password and new_password != confirm_password:
+            return Response({
+                'error': 'Xác nhận mật khẩu không khớp'
+            }, status=400)
+
+        request.user.set_password(new_password)
+        request.user.save(update_fields=['password'])
+
+        return Response({
+            'success': True,
+            'message': 'Đổi mật khẩu thành công'
+        }, status=200)
+
+    @action(detail=False, methods=['get', 'put'], permission_classes=[IsAuthenticated], url_path='notification-settings')
+    def notification_settings(self, request):
+        """
+        GET /api/staff/notification-settings/
+        PUT /api/staff/notification-settings/
+
+        GET: Trả về danh sách setting thông báo cho staff hiện tại.
+        PUT: Cập nhật bật/tắt theo 1 setting hoặc cập nhật batch.
+
+        PUT body (single): {"id": "new-order", "enabled": false}
+        PUT body (batch): {"settings": [{"id": "new-order", "enabled": false}]}
+        """
+        if not hasattr(request.user, 'staff_profile'):
+            return Response({'error': 'Không phải staff'}, status=403)
+
+        staff = request.user.staff_profile
+
+        if request.method == 'GET':
+            existing = StaffNotificationSetting.objects.filter(staff=staff)
+            existing_map = {item.setting_key: item.enabled for item in existing}
+
+            settings = []
+            for item in STAFF_NOTIFICATION_SETTING_DEFINITIONS:
+                settings.append({
+                    'id': item['id'],
+                    'title': item['title'],
+                    'description': item['description'],
+                    'enabled': existing_map.get(item['id'], item['default_enabled'])
+                })
+
+            return Response({
+                'success': True,
+                'settings': settings
+            }, status=200)
+
+        updates = request.data.get('settings')
+        if updates is None:
+            if 'id' not in request.data or 'enabled' not in request.data:
+                return Response({
+                    'error': 'Body phải chứa "id" + "enabled" hoặc mảng "settings"'
+                }, status=400)
+            updates = [{
+                'id': request.data.get('id'),
+                'enabled': request.data.get('enabled')
+            }]
+
+        if not isinstance(updates, list) or not updates:
+            return Response({
+                'error': 'settings phải là mảng không rỗng'
+            }, status=400)
+
+        updated_count = 0
+        for item in updates:
+            setting_id = item.get('id')
+            enabled_value = item.get('enabled')
+
+            if setting_id not in STAFF_NOTIFICATION_SETTING_ID_SET:
+                return Response({
+                    'error': f'Setting id không hợp lệ: {setting_id}'
+                }, status=400)
+
+            if not isinstance(enabled_value, bool):
+                return Response({
+                    'error': f'Giá trị enabled của {setting_id} phải là boolean'
+                }, status=400)
+
+            StaffNotificationSetting.objects.update_or_create(
+                staff=staff,
+                setting_key=setting_id,
+                defaults={'enabled': enabled_value}
+            )
+            updated_count += 1
+
+        return Response({
+            'success': True,
+            'message': f'Đã cập nhật {updated_count} cài đặt thông báo'
+        }, status=200)
 
 
 # ========================================

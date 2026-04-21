@@ -1329,6 +1329,25 @@ class Notification(models.Model):
         return f"{self.title} - {self.recipient_type}"
 
 
+class StaffNotificationSetting(models.Model):
+    """Lưu cấu hình bật/tắt thông báo theo từng nhân viên."""
+    staff = models.ForeignKey(Staff, on_delete=models.CASCADE, related_name='notification_settings')
+    setting_key = models.CharField(max_length=100)
+    enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'staff_notification_settings'
+        unique_together = ('staff', 'setting_key')
+        indexes = [
+            models.Index(fields=['staff', 'setting_key']),
+        ]
+
+    def __str__(self):
+        return f"{self.staff.employee_code} - {self.setting_key}: {self.enabled}"
+
+
 # ========================================
 # 12. SYSTEM SETTINGS
 # ========================================

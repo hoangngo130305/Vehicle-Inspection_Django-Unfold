@@ -1,7 +1,7 @@
 /**
  * API Client for Đăng Kiểm Việt Admin Web
  * Centralized API calls with JWT authentication and auto-refresh
- * 
+ *
  * FEATURES:
  * - JWT Token Management (auto-refresh)
  * - Orders API (full CRUD)
@@ -9,7 +9,13 @@
  * - Stations, Vehicle Types, Users, Roles, etc.
  */
 
-import { API_BASE_URL, TOKEN_REFRESH_BUFFER, VERBOSE_API_LOGS, STORAGE_KEYS, API_ENDPOINTS } from './config'; // ✅ ADDED: API_ENDPOINTS
+import {
+  API_BASE_URL,
+  TOKEN_REFRESH_BUFFER,
+  VERBOSE_API_LOGS,
+  STORAGE_KEYS,
+  API_ENDPOINTS,
+} from "./config"; // ✅ ADDED: API_ENDPOINTS
 
 // ============================================================
 // TOKEN MANAGEMENT
@@ -40,13 +46,13 @@ export const setRefreshToken = (token: string): void => {
  */
 export const decodeToken = (token: string): any | null => {
   try {
-    const base64Url = token.split('.')[1];
-    const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+    const base64Url = token.split(".")[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
     const jsonPayload = decodeURIComponent(
       atob(base64)
-        .split('')
-        .map(c => '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2))
-        .join('')
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join(""),
     );
     return JSON.parse(jsonPayload);
   } catch (error) {
@@ -62,9 +68,9 @@ export const isTokenExpired = (token: string): boolean => {
   if (!decoded || !decoded.exp) {
     return true;
   }
-  
+
   const currentTime = Date.now() / 1000;
-  return decoded.exp < (currentTime + TOKEN_REFRESH_BUFFER);
+  return decoded.exp < currentTime + TOKEN_REFRESH_BUFFER;
 };
 
 /**
@@ -90,41 +96,45 @@ const subscribeTokenRefresh = (callback: (token: string) => void) => {
 };
 
 const onTokenRefreshed = (token: string) => {
-  refreshSubscribers.forEach(callback => callback(token));
+  refreshSubscribers.forEach((callback) => callback(token));
   refreshSubscribers = [];
 };
 
 export const refreshAccessToken = async (): Promise<string | null> => {
   const refreshToken = getRefreshToken();
-  
+
   if (!refreshToken) {
     return null;
   }
-  
+
   try {
-    const response = await fetch(`${API_BASE_URL}${API_ENDPOINTS.REFRESH_TOKEN}`, { // ✅ FIXED: Use API_ENDPOINTS.REFRESH_TOKEN from config
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ refresh: refreshToken }),
-    });
-    
+    const response = await fetch(
+      `${API_BASE_URL}${API_ENDPOINTS.REFRESH_TOKEN}`,
+      {
+        // ✅ FIXED: Use API_ENDPOINTS.REFRESH_TOKEN from config
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh: refreshToken }),
+      },
+    );
+
     if (!response.ok) {
       clearToken();
-      localStorage.removeItem('adminRefreshToken');
+      localStorage.removeItem("adminRefreshToken");
       return null;
     }
-    
+
     const data = await response.json();
-    
+
     if (data.access) {
       setToken(data.access);
       return data.access;
     }
-    
+
     return null;
   } catch (error) {
     clearToken();
-    localStorage.removeItem('adminRefreshToken');
+    localStorage.removeItem("adminRefreshToken");
     return null;
   }
 };
@@ -136,9 +146,9 @@ export const refreshAccessToken = async (): Promise<string | null> => {
 export const getAuthHeaders = async (): Promise<HeadersInit> => {
   let token = getToken();
   const headers: HeadersInit = {
-    'Content-Type': 'application/json',
+    "Content-Type": "application/json",
   };
-  
+
   if (token) {
     // Check if token is expired
     if (isTokenExpired(token)) {
@@ -150,14 +160,17 @@ export const getAuthHeaders = async (): Promise<HeadersInit> => {
         return headers;
       }
     }
-    
+
     // ✅ FIXED: Django Simple JWT uses "Bearer" prefix, not "Token"
-    headers['Authorization'] = `Bearer ${token}`;
-    console.log('🔑 [AUTH HEADERS] Token added:', token.substring(0, 20) + '...'); // DEBUG
+    headers["Authorization"] = `Bearer ${token}`;
+    console.log(
+      "🔑 [AUTH HEADERS] Token added:",
+      token.substring(0, 20) + "...",
+    ); // DEBUG
   } else {
-    console.warn('⚠️ [AUTH HEADERS] No token found!'); // DEBUG
+    console.warn("⚠️ [AUTH HEADERS] No token found!"); // DEBUG
   }
-  
+
   return headers;
 };
 
@@ -172,21 +185,23 @@ interface ApiOptions extends RequestInit {
 export const apiCall = async <T = any>(
   endpoint: string,
   options: ApiOptions = {},
-  retryCount = 0
+  retryCount = 0,
 ): Promise<T> => {
   const { requireAuth = true, ...fetchOptions } = options;
-  
-  const url = endpoint.startsWith('http') ? endpoint : `${API_BASE_URL}${endpoint}`;
-  
-  const headers: HeadersInit = requireAuth 
-    ? await getAuthHeaders() 
-    : { 'Content-Type': 'application/json' };
-  
+
+  const url = endpoint.startsWith("http")
+    ? endpoint
+    : `${API_BASE_URL}${endpoint}`;
+
+  const headers: HeadersInit = requireAuth
+    ? await getAuthHeaders()
+    : { "Content-Type": "application/json" };
+
   if (VERBOSE_API_LOGS) {
-    console.log(`📡 [API CALL] ${fetchOptions.method || 'GET'} ${endpoint}`);
-    console.log('📋 [HEADERS]', headers); // ✅ ADDED: Debug headers
+    console.log(`📡 [API CALL] ${fetchOptions.method || "GET"} ${endpoint}`);
+    console.log("📋 [HEADERS]", headers); // ✅ ADDED: Debug headers
   }
-  
+
   const response = await fetch(url, {
     ...fetchOptions,
     headers: {
@@ -194,7 +209,7 @@ export const apiCall = async <T = any>(
       ...fetchOptions.headers,
     },
   });
-  
+
   // Handle 401 - Token expired, try to refresh
   if (response.status === 401 && requireAuth && retryCount === 0) {
     // If already refreshing, wait for it
@@ -208,26 +223,26 @@ export const apiCall = async <T = any>(
         });
       });
     }
-    
+
     // Start refreshing
     isRefreshing = true;
     const newToken = await refreshAccessToken();
     isRefreshing = false;
-    
+
     if (newToken) {
       // Notify all waiting requests
       onTokenRefreshed(newToken);
-      
+
       // Retry the original request
       return apiCall<T>(endpoint, options, retryCount + 1);
     } else {
       // Refresh failed, clear tokens
       clearToken();
-      localStorage.removeItem('adminRefreshToken');
-      throw new Error('Session expired - Please login again');
+      localStorage.removeItem("adminRefreshToken");
+      throw new Error("Session expired - Please login again");
     }
   }
-  
+
   // Handle other errors
   if (!response.ok) {
     const errorText = await response.text();
@@ -237,35 +252,43 @@ export const apiCall = async <T = any>(
     } catch {
       errorData = { detail: errorText };
     }
-    
+
     console.error(`❌ [API ERROR] ${response.status}:`, errorData);
-    
+
     // ✅ IMPROVED ERROR MESSAGE - Show all validation errors
-    if (typeof errorData === 'object' && !errorData.detail) {
+    if (typeof errorData === "object" && !errorData.detail) {
       const errorMessages = Object.entries(errorData)
-        .map(([field, messages]) => `${field}: ${Array.isArray(messages) ? messages.join(', ') : messages}`)
-        .join(' | ');
+        .map(
+          ([field, messages]) =>
+            `${field}: ${Array.isArray(messages) ? messages.join(", ") : messages}`,
+        )
+        .join(" | ");
       throw new Error(`Validation Error: ${errorMessages}`);
     }
-    
-    throw new Error(errorData.detail || `HTTP ${response.status}: ${response.statusText}`);
+
+    throw new Error(
+      errorData.detail || `HTTP ${response.status}: ${response.statusText}`,
+    );
   }
-  
+
   // Handle 204 No Content (DELETE success)
   if (response.status === 204) {
     return undefined as T;
   }
-  
+
   // Parse JSON response
-  const contentType = response.headers.get('content-type');
-  if (contentType && contentType.includes('application/json')) {
+  const contentType = response.headers.get("content-type");
+  if (contentType && contentType.includes("application/json")) {
     const data = await response.json();
     if (VERBOSE_API_LOGS) {
-      console.log(`✅ [API SUCCESS] ${fetchOptions.method || 'GET'} ${endpoint}`, data);
+      console.log(
+        `✅ [API SUCCESS] ${fetchOptions.method || "GET"} ${endpoint}`,
+        data,
+      );
     }
     return data;
   }
-  
+
   return {} as T;
 };
 
@@ -277,63 +300,72 @@ export const autoLogin = async (): Promise<boolean> => {
   try {
     const existingToken = getToken();
     if (existingToken && !isTokenExpired(existingToken)) {
-      console.log('✅ [AUTO-LOGIN] Already have valid token');
+      console.log("✅ [AUTO-LOGIN] Already have valid token");
       return true;
     }
 
     const refreshToken = getRefreshToken();
     if (refreshToken) {
-      console.log('🔄 [AUTO-LOGIN] Attempting to refresh token...');
+      console.log("🔄 [AUTO-LOGIN] Attempting to refresh token...");
       const newToken = await refreshAccessToken();
       if (newToken) {
-        console.log('✅ [AUTO-LOGIN] Token refreshed successfully');
+        console.log("✅ [AUTO-LOGIN] Token refreshed successfully");
         return true;
       }
     }
 
-    console.log('🔑 [AUTO-LOGIN] Performing auto-login with demo credentials...');
-    console.log('🔑 [AUTO-LOGIN] Endpoint:', `${API_BASE_URL}/token/`); // ✅ FIXED: Use JWT endpoint
-    
-    const response = await fetch(`${API_BASE_URL}/token/`, { // ✅ FIXED: /login/ → /token/
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    console.log(
+      "🔑 [AUTO-LOGIN] Performing auto-login with demo credentials...",
+    );
+    console.log("🔑 [AUTO-LOGIN] Endpoint:", `${API_BASE_URL}/token/`); // ✅ FIXED: Use JWT endpoint
+
+    const response = await fetch(`${API_BASE_URL}/token/`, {
+      // ✅ FIXED: /login/ → /token/
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        username: 'admin',
-        password: 'admin123',
+        username: "admin",
+        password: "admin123",
       }),
     });
 
-    console.log('🔑 [AUTO-LOGIN] Response status:', response.status, response.statusText);
+    console.log(
+      "🔑 [AUTO-LOGIN] Response status:",
+      response.status,
+      response.statusText,
+    );
 
     if (!response.ok) {
-      console.error('❌ [AUTO-LOGIN] Failed:', response.statusText);
-      console.error('❌ [AUTO-LOGIN] Check if Django server is running on http://14.224.210.210:8008/');
-      console.error('❌ [AUTO-LOGIN] Check if you created admin user');
-      console.error('❌ [AUTO-LOGIN] Run: python manage.py createsuperuser');
+      console.error("❌ [AUTO-LOGIN] Failed:", response.statusText);
+      console.error(
+        "❌ [AUTO-LOGIN] Check if Django server is running on http://14.224.210.210:8008/",
+      );
+      console.error("❌ [AUTO-LOGIN] Check if you created admin user");
+      console.error("❌ [AUTO-LOGIN] Run: python manage.py createsuperuser");
       return false;
     }
 
     const data = await response.json();
-    console.log('🔑 [AUTO-LOGIN] Response data:', data);
-    
+    console.log("🔑 [AUTO-LOGIN] Response data:", data);
+
     if (data.access) {
       setToken(data.access);
-      console.log('✅ [AUTO-LOGIN] Access token saved');
+      console.log("✅ [AUTO-LOGIN] Access token saved");
     }
     if (data.refresh) {
       setRefreshToken(data.refresh);
-      console.log('✅ [AUTO-LOGIN] Refresh token saved');
+      console.log("✅ [AUTO-LOGIN] Refresh token saved");
     }
 
-    console.log('✅ [AUTO-LOGIN] Auto-login successful!');
+    console.log("✅ [AUTO-LOGIN] Auto-login successful!");
     return true;
   } catch (error) {
-    console.error('❌ [AUTO-LOGIN] Error:', error);
-    console.error('❌ [AUTO-LOGIN] Make sure Django backend is running!');
-    console.error('❌ [AUTO-LOGIN] Commands to run:');
-    console.error('   1. cd dangkiem');
-    console.error('   2. python manage.py create_demo_data');
-    console.error('   3. python manage.py runserver');
+    console.error("❌ [AUTO-LOGIN] Error:", error);
+    console.error("❌ [AUTO-LOGIN] Make sure Django backend is running!");
+    console.error("❌ [AUTO-LOGIN] Commands to run:");
+    console.error("   1. cd dangkiem");
+    console.error("   2. python manage.py create_demo_data");
+    console.error("   3. python manage.py runserver");
     return false;
   }
 };
@@ -344,8 +376,8 @@ export const autoLogin = async (): Promise<boolean> => {
 
 export const clearTokens = (): void => {
   clearToken();
-  localStorage.removeItem('adminRefreshToken');
-  console.log('🗑️ [TOKENS] All tokens cleared');
+  localStorage.removeItem("adminRefreshToken");
+  console.log("🗑️ [TOKENS] All tokens cleared");
 };
 
 // ============================================================
@@ -372,7 +404,7 @@ export interface LoginResponse {
 
 export interface CustomerOTPRequest {
   phone: string;
-  purpose: 'register' | 'login';
+  purpose: "register" | "login";
 }
 
 export interface CustomerOTPResponse {
@@ -396,7 +428,7 @@ export interface CustomerAuthResponse {
   success: boolean;
   message: string;
   token: string;
-  user_type: 'customer';
+  user_type: "customer";
   customer: {
     id: number;
     full_name: string;
@@ -420,7 +452,7 @@ export interface StaffAuthResponse {
   success: boolean;
   message: string;
   token: string;
-  user_type: 'staff';
+  user_type: "staff";
   staff: {
     id: number;
     employee_code: string;
@@ -445,7 +477,7 @@ export interface AdminAuthResponse {
   success: boolean;
   message: string;
   token: string;
-  user_type: 'admin';
+  user_type: "admin";
   redirect_url?: string; // ✅ Admin redirect URL
   admin: {
     id: number;
@@ -457,7 +489,7 @@ export interface AdminAuthResponse {
 }
 
 export interface MeResponse {
-  user_type: 'customer' | 'staff';
+  user_type: "customer" | "staff";
   profile: any; // Customer or Staff profile
 }
 
@@ -466,12 +498,12 @@ export const authAPI = {
    * Login with email/username and password
    */
   login: async (email: string, password: string): Promise<LoginResponse> => {
-    console.log('🔐 [AUTH API] Login request:', { email });
-    
+    console.log("🔐 [AUTH API] Login request:", { email });
+
     // Django expects 'username' field, but we allow email or username
     const response = await fetch(`${API_BASE_URL}/auth/login/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         username: email, // Django uses 'username' field
         password,
@@ -480,13 +512,13 @@ export const authAPI = {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [AUTH API] Login failed:', errorData);
-      throw new Error(errorData.detail || 'Đăng nhập thất bại');
+      console.error("❌ [AUTH API] Login failed:", errorData);
+      throw new Error(errorData.detail || "Đăng nhập thất bại");
     }
 
     const data = await response.json();
-    console.log('✅ [AUTH API] Login successful:', data);
-    
+    console.log("✅ [AUTH API] Login successful:", data);
+
     return data;
   },
 
@@ -497,98 +529,122 @@ export const authAPI = {
   /**
    * Request OTP for customer registration/login
    */
-  customerRequestOTP: async (data: CustomerOTPRequest): Promise<CustomerOTPResponse> => {
-    console.log('📱 [CUSTOMER AUTH] Request OTP:', data);
-    
+  customerRequestOTP: async (
+    data: CustomerOTPRequest,
+  ): Promise<CustomerOTPResponse> => {
+    console.log("📱 [CUSTOMER AUTH] Request OTP:", data);
+
     const response = await fetch(`${API_BASE_URL}/auth/request-otp/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [CUSTOMER AUTH] Request OTP failed:', errorData);
-      throw new Error(errorData.message || errorData.detail || 'Gửi OTP thất bại');
+      console.error("❌ [CUSTOMER AUTH] Request OTP failed:", errorData);
+      throw new Error(
+        errorData.message || errorData.detail || "Gửi OTP thất bại",
+      );
     }
 
     const result = await response.json();
-    console.log('✅ [CUSTOMER AUTH] OTP sent:', result);
-    
+    console.log("✅ [CUSTOMER AUTH] OTP sent:", result);
+
     return result;
   },
 
   /**
    * Login customer with OTP (UNIFIED LOGIN)
    */
-  customerLogin: async (data: CustomerLoginRequest): Promise<CustomerAuthResponse> => {
-    console.log('🔐 [CUSTOMER AUTH] Login:', { phone: data.phone });
-    console.log('🔐 [CUSTOMER AUTH] Login payload:', JSON.stringify(data));
-    
+  customerLogin: async (
+    data: CustomerLoginRequest,
+  ): Promise<CustomerAuthResponse> => {
+    console.log("🔐 [CUSTOMER AUTH] Login:", { phone: data.phone });
+    console.log("🔐 [CUSTOMER AUTH] Login payload:", JSON.stringify(data));
+
     const response = await fetch(`${API_BASE_URL}/login/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [CUSTOMER AUTH] Login failed:', errorData);
-      
+      console.error("❌ [CUSTOMER AUTH] Login failed:", errorData);
+
       // Handle different error formats
-      if (errorData.non_field_errors && Array.isArray(errorData.non_field_errors)) {
-        throw new Error(errorData.non_field_errors[0] || 'Đăng nhập thất bại');
+      if (
+        errorData.non_field_errors &&
+        Array.isArray(errorData.non_field_errors)
+      ) {
+        throw new Error(errorData.non_field_errors[0] || "Đăng nhập thất bại");
       }
-      
-      throw new Error(errorData.message || errorData.detail || 'Đăng nhập thất bại');
+
+      throw new Error(
+        errorData.message || errorData.detail || "Đăng nhập thất bại",
+      );
     }
 
     const result = await response.json();
-    console.log('✅ [CUSTOMER AUTH] Login successful:', result);
-    
+    console.log("✅ [CUSTOMER AUTH] Login successful:", result);
+
     // Save token
     if (result.token) {
       setToken(result.token);
     }
-    
+
     return result;
   },
 
   /**
    * Register new customer with phone + OTP + password
    */
-  customerRegister: async (data: { phone: string; otp_code: string; full_name: string; password: string; email?: string }): Promise<CustomerAuthResponse> => {
-    console.log('📝 [CUSTOMER AUTH] Register:', { phone: data.phone, full_name: data.full_name });
-    
+  customerRegister: async (data: {
+    phone: string;
+    otp_code: string;
+    full_name: string;
+    password: string;
+    email?: string;
+  }): Promise<CustomerAuthResponse> => {
+    console.log("📝 [CUSTOMER AUTH] Register:", {
+      phone: data.phone,
+      full_name: data.full_name,
+    });
+
     const response = await fetch(`${API_BASE_URL}/register/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [CUSTOMER AUTH] Register failed:', errorData);
-      
+      console.error("❌ [CUSTOMER AUTH] Register failed:", errorData);
+
       // Handle field errors
       if (errorData.phone) {
-        throw new Error(errorData.phone[0] || 'Số điện thoại không hợp lệ');
+        throw new Error(errorData.phone[0] || "Số điện thoại không hợp lệ");
       }
       if (errorData.password) {
-        throw new Error(errorData.password[0] || 'Mật khẩu không hợp lệ');
+        throw new Error(errorData.password[0] || "Mật khẩu không hợp lệ");
       }
-      
-      throw new Error(errorData.message || errorData.non_field_errors?.[0] || 'Đăng ký thất bại');
+
+      throw new Error(
+        errorData.message ||
+          errorData.non_field_errors?.[0] ||
+          "Đăng ký thất bại",
+      );
     }
 
     const result = await response.json();
-    console.log('✅ [CUSTOMER AUTH] Register successful:', result);
-    
+    console.log("✅ [CUSTOMER AUTH] Register successful:", result);
+
     // Save token
     if (result.token) {
       setToken(result.token);
     }
-    
+
     return result;
   },
 
@@ -600,28 +656,30 @@ export const authAPI = {
    * Login staff with phone + password (UNIFIED LOGIN)
    */
   staffLogin: async (data: StaffLoginRequest): Promise<StaffAuthResponse> => {
-    console.log('🔐 [STAFF AUTH] Login:', { phone: data.phone });
-    
+    console.log("🔐 [STAFF AUTH] Login:", { phone: data.phone });
+
     const response = await fetch(`${API_BASE_URL}/login/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [STAFF AUTH] Login failed:', errorData);
-      throw new Error(errorData.message || errorData.detail || 'Đăng nhập thất bại');
+      console.error("❌ [STAFF AUTH] Login failed:", errorData);
+      throw new Error(
+        errorData.message || errorData.detail || "Đăng nhập thất bại",
+      );
     }
 
     const result = await response.json();
-    console.log('✅ [STAFF AUTH] Login successful:', result);
-    
+    console.log("✅ [STAFF AUTH] Login successful:", result);
+
     // Save token
     if (result.token) {
       setToken(result.token);
     }
-    
+
     return result;
   },
 
@@ -633,39 +691,41 @@ export const authAPI = {
    * Login admin with username/password (UNIFIED LOGIN)
    */
   adminLogin: async (data: AdminLoginRequest): Promise<AdminAuthResponse> => {
-    console.log('🔐 [ADMIN AUTH] Login:', { username: data.username });
-    
+    console.log("🔐 [ADMIN AUTH] Login:", { username: data.username });
+
     // ✅ FIXED: Use JWT /token/ endpoint instead of /login/
     const response = await fetch(`${API_BASE_URL}/token/`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(data),
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [ADMIN AUTH] Login failed:', errorData);
-      throw new Error(errorData.detail || errorData.message || 'Đăng nhập thất bại');
+      console.error("❌ [ADMIN AUTH] Login failed:", errorData);
+      throw new Error(
+        errorData.detail || errorData.message || "Đăng nhập thất bại",
+      );
     }
 
     const jwtData = await response.json();
-    console.log('✅ [ADMIN AUTH] JWT received:', jwtData);
-    
+    console.log("✅ [ADMIN AUTH] JWT received:", jwtData);
+
     // ✅ TRANSFORM: JWT response to AdminAuthResponse format
     const result: AdminAuthResponse = {
       success: true,
-      message: 'Đăng nhập thành công',
+      message: "Đăng nhập thành công",
       token: jwtData.access, // ✅ Map 'access' to 'token'
-      user_type: 'admin',
+      user_type: "admin",
       admin: {
         id: 0, // Will be populated from token or /auth/me/
         username: data.username,
-        email: '',
+        email: "",
         is_superuser: true,
         is_staff: true,
       },
     };
-    
+
     // Save tokens
     if (jwtData.access) {
       setToken(jwtData.access);
@@ -673,8 +733,8 @@ export const authAPI = {
     if (jwtData.refresh) {
       setRefreshToken(jwtData.refresh);
     }
-    
-    console.log('✅ [ADMIN AUTH] Login successful:', result);
+
+    console.log("✅ [ADMIN AUTH] Login successful:", result);
     return result;
   },
 
@@ -686,30 +746,30 @@ export const authAPI = {
    * Get current user profile
    */
   getMe: async (): Promise<MeResponse> => {
-    console.log('👤 [AUTH API] Get profile');
-    
+    console.log("👤 [AUTH API] Get profile");
+
     const token = getToken();
     if (!token) {
-      throw new Error('No authentication token');
+      throw new Error("No authentication token");
     }
 
     const response = await fetch(`${API_BASE_URL}/auth/me/`, {
-      method: 'GET',
+      method: "GET",
       headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Token ${token}`,
+        "Content-Type": "application/json",
+        Authorization: `Token ${token}`,
       },
     });
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      console.error('❌ [AUTH API] Get profile failed:', errorData);
-      throw new Error(errorData.detail || 'Lấy thông tin thất bại');
+      console.error("❌ [AUTH API] Get profile failed:", errorData);
+      throw new Error(errorData.detail || "Lấy thông tin thất bại");
     }
 
     const result = await response.json();
-    console.log('✅ [AUTH API] Profile retrieved:', result);
-    
+    console.log("✅ [AUTH API] Profile retrieved:", result);
+
     return result;
   },
 
@@ -717,22 +777,22 @@ export const authAPI = {
    * Logout (clears token and calls backend)
    */
   logout: async (): Promise<void> => {
-    console.log('🔐 [AUTH API] Logout request');
-    
+    console.log("🔐 [AUTH API] Logout request");
+
     try {
       const token = getToken();
       if (token) {
         await fetch(`${API_BASE_URL}/auth/logout/`, {
-          method: 'POST',
+          method: "POST",
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Token ${token}`,
+            "Content-Type": "application/json",
+            Authorization: `Token ${token}`,
           },
         });
       }
-      console.log('✅ [AUTH API] Logout successful');
+      console.log("✅ [AUTH API] Logout successful");
     } catch (error) {
-      console.error('❌ [AUTH API] Logout failed:', error);
+      console.error("❌ [AUTH API] Logout failed:", error);
       // Continue anyway - we'll clear tokens locally
     } finally {
       clearTokens();
@@ -771,8 +831,14 @@ export interface Order {
   station_name: string;
   assigned_staff: number | null;
   staff_name: string | null; // ✅ Backend trả về 'staff_name' (không phải assigned_staff_name)
-  status: 'pending' | 'confirmed' | 'assigned' | 'in_progress' | 'completed' | 'cancelled'; // ✅ FIXED: Match Django backend
-  priority: 'low' | 'normal' | 'high' | 'urgent'; // ✅ FIXED: Added 'urgent'
+  status:
+    | "pending"
+    | "confirmed"
+    | "assigned"
+    | "in_progress"
+    | "completed"
+    | "cancelled"; // ✅ FIXED: Match Django backend
+  priority: "low" | "normal" | "high" | "urgent"; // ✅ FIXED: Added 'urgent'
   appointment_date: string;
   appointment_time: string;
   estimated_amount: string;
@@ -781,7 +847,7 @@ export interface Order {
   customer_notes?: string;
   started_at?: string;
   completed_at?: string;
-  inspection_result?: 'not_started' | 'pass' | 'fail'; // ✅ FIXED: Match Django backend
+  inspection_result?: "not_started" | "pass" | "fail"; // ✅ FIXED: Match Django backend
   created_at: string;
   updated_at: string;
 }
@@ -821,7 +887,7 @@ export interface Employee {
   position: string;
   hire_date: string;
   address?: string; // ✅ Added
-  status: 'active' | 'inactive' | 'on_leave'; // ✅ Keep all 3 statuses
+  status: "active" | "inactive" | "on_leave"; // ✅ Keep all 3 statuses
   created_at: string;
   updated_at: string;
 }
@@ -846,7 +912,7 @@ export interface Station {
   email?: string;
   daily_capacity?: number; // ✅ Make optional (can be null)
   working_hours?: string; // ✅ Make optional
-  status: 'active' | 'inactive' | 'maintenance';
+  status: "active" | "inactive" | "maintenance";
   created_at: string;
   updated_at: string;
 }
@@ -868,7 +934,7 @@ export interface VehicleType {
   type_code: string;
   description: string;
   display_order: number;
-  status: 'active' | 'inactive';
+  status: "active" | "inactive";
   created_at: string;
   updated_at: string;
 }
@@ -892,7 +958,7 @@ export interface User {
   full_name: string;
   is_staff: boolean;
   is_superuser: boolean;
-  status: 'active' | 'inactive' | 'banned';
+  status: "active" | "inactive" | "banned";
   created_at: string;
   updated_at: string;
 }
@@ -920,13 +986,19 @@ export interface Role {
 export interface Payment {
   id: number;
   payment_code: string;
-  payment_type: 'inspection' | 'additional' | 'refund' | 'online' | 'offline';
+  payment_type: "inspection" | "additional" | "refund" | "online" | "offline";
   order: number;
   order_code: string;
   customer_name: string;
-  payment_method: 'cash' | 'bank_transfer' | 'vietqr' | 'momo' | 'vnpay' | 'zalopay';
+  payment_method:
+    | "cash"
+    | "bank_transfer"
+    | "vietqr"
+    | "momo"
+    | "vnpay"
+    | "zalopay";
   amount: string;
-  status: 'pending' | 'paid' | 'failed' | 'refunded'; // ✅ Changed 'completed' to 'paid' to match backend
+  status: "pending" | "paid" | "failed" | "refunded"; // ✅ Changed 'completed' to 'paid' to match backend
   transaction_id?: string;
   vietqr_code_url?: string;
   qr_content?: string;
@@ -957,7 +1029,7 @@ export interface CreatePaymentRequest {
   amount: number;
   user_id?: string;
   order_id?: number;
-  method?: 'QR' | 'VNPAY' | 'CASH';
+  method?: "QR" | "VNPAY" | "CASH";
 }
 
 export interface CreatePaymentResponse {
@@ -966,12 +1038,12 @@ export interface CreatePaymentResponse {
   qrCode: string;
   qrImageUrl: string;
   checkoutUrl: string;
-  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+  status: "PENDING" | "SUCCESS" | "FAILED" | "CANCELLED" | "REFUNDED";
 }
 
 export interface CheckPaymentStatusResponse {
   orderCode: number;
-  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+  status: "PENDING" | "SUCCESS" | "FAILED" | "CANCELLED" | "REFUNDED";
   amount: number;
   message: string;
 }
@@ -990,7 +1062,7 @@ export interface Pricing {
   total_price: string;
   effective_from: string;
   effective_to?: string;
-  status: 'active' | 'inactive' | 'expired';
+  status: "active" | "inactive" | "expired";
   created_at: string;
   updated_at: string;
 }
@@ -1010,10 +1082,10 @@ export interface ChecklistItem {
   id: number;
   item_key: string; // ✅ Changed from item_code
   item_label: string; // ✅ Changed from item_name
-  category: 'safety' | 'emission' | 'both'; // ✅ Updated to match Django model
+  category: "safety" | "emission" | "both"; // ✅ Updated to match Django model
   display_order: number;
   require_photo: boolean; // ✅ Changed from is_required
-  status: 'active' | 'inactive';
+  status: "active" | "inactive";
   created_at: string;
   updated_at: string;
 }
@@ -1124,7 +1196,7 @@ export interface SystemSetting {
   setting_name: string;
   setting_value: string | null;
   default_value: string | null;
-  value_type: 'string' | 'number' | 'boolean' | 'json';
+  value_type: "string" | "number" | "boolean" | "json";
   description: string | null;
   is_public: boolean;
   is_editable: boolean;
@@ -1157,24 +1229,29 @@ export const orderAPI = {
    */
   getOrders: async (filters?: OrderFilters): Promise<OrdersResponse> => {
     const params = new URLSearchParams();
-    
-    if (filters?.page) params.append('page', filters.page.toString());
-    if (filters?.page_size) params.append('page_size', filters.page_size.toString());
-    if (filters?.status) params.append('status', filters.status);
-    if (filters?.priority) params.append('priority', filters.priority);
-    if (filters?.search) params.append('search', filters.search);
-    if (filters?.station) params.append('station', filters.station.toString());
-    if (filters?.customer) params.append('customer', filters.customer.toString());
-    if (filters?.vehicle) params.append('vehicle', filters.vehicle.toString());
-    if (filters?.date_from) params.append('date_from', filters.date_from);
-    if (filters?.date_to) params.append('date_to', filters.date_to);
+
+    if (filters?.page) params.append("page", filters.page.toString());
+    if (filters?.page_size)
+      params.append("page_size", filters.page_size.toString());
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.priority) params.append("priority", filters.priority);
+    if (filters?.search) params.append("search", filters.search);
+    if (filters?.station) params.append("station", filters.station.toString());
+    if (filters?.customer)
+      params.append("customer", filters.customer.toString());
+    if (filters?.vehicle) params.append("vehicle", filters.vehicle.toString());
+    if (filters?.date_from) params.append("date_from", filters.date_from);
+    if (filters?.date_to) params.append("date_to", filters.date_to);
     if (filters?.assigned_staff !== undefined) {
-      params.append('assigned_staff', filters.assigned_staff?.toString() || 'null');
+      params.append(
+        "assigned_staff",
+        filters.assigned_staff?.toString() || "null",
+      );
     }
-    
+
     const queryString = params.toString();
-    const endpoint = queryString ? `/orders/?${queryString}` : '/orders/'; // ✅ FIXED: Removed /api/ prefix (already in API_BASE_URL)
-    
+    const endpoint = queryString ? `/orders/?${queryString}` : "/orders/"; // ✅ FIXED: Removed /api/ prefix (already in API_BASE_URL)
+
     return apiCall<OrdersResponse>(endpoint);
   },
 
@@ -1189,8 +1266,9 @@ export const orderAPI = {
    * Update order
    */
   updateOrder: async (id: number, data: Partial<Order>): Promise<Order> => {
-    return apiCall<Order>(`/orders/${id}/`, { // ✅ FIXED: Removed /api/ prefix
-      method: 'PATCH',
+    return apiCall<Order>(`/orders/${id}/`, {
+      // ✅ FIXED: Removed /api/ prefix
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
@@ -1198,10 +1276,13 @@ export const orderAPI = {
   /**
    * Assign staff to order
    */
-  assignStaff: async (orderId: number, staffId: number | null): Promise<Order> => {
+  assignStaff: async (
+    orderId: number,
+    staffId: number | null,
+  ): Promise<Order> => {
     // ✅ Use custom action endpoint
     return apiCall<Order>(`/orders/${orderId}/assign_staff/`, {
-      method: 'POST',
+      method: "POST",
       body: JSON.stringify({ staff_id: staffId }),
     });
   },
@@ -1209,9 +1290,13 @@ export const orderAPI = {
   /**
    * Update order status
    */
-  updateStatus: async (orderId: number, status: Order['status']): Promise<Order> => {
-    return apiCall<Order>(`/orders/${orderId}/`, { // ✅ FIXED: Removed /api/ prefix
-      method: 'PATCH',
+  updateStatus: async (
+    orderId: number,
+    status: Order["status"],
+  ): Promise<Order> => {
+    return apiCall<Order>(`/orders/${orderId}/`, {
+      // ✅ FIXED: Removed /api/ prefix
+      method: "PATCH",
       body: JSON.stringify({ status }),
     });
   },
@@ -1219,9 +1304,13 @@ export const orderAPI = {
   /**
    * Update order priority
    */
-  updatePriority: async (orderId: number, priority: Order['priority']): Promise<Order> => {
-    return apiCall<Order>(`/orders/${orderId}/`, { // ✅ FIXED: Removed /api/ prefix
-      method: 'PATCH',
+  updatePriority: async (
+    orderId: number,
+    priority: Order["priority"],
+  ): Promise<Order> => {
+    return apiCall<Order>(`/orders/${orderId}/`, {
+      // ✅ FIXED: Removed /api/ prefix
+      method: "PATCH",
       body: JSON.stringify({ priority }),
     });
   },
@@ -1230,8 +1319,9 @@ export const orderAPI = {
    * Delete order
    */
   deleteOrder: async (id: number): Promise<void> => {
-    return apiCall<void>(`/orders/${id}/`, { // ✅ FIXED: Removed /api/ prefix
-      method: 'DELETE',
+    return apiCall<void>(`/orders/${id}/`, {
+      // ✅ FIXED: Removed /api/ prefix
+      method: "DELETE",
     });
   },
 };
@@ -1246,19 +1336,20 @@ export const employeeAPI = {
    */
   getEmployees: async (filters?: EmployeeFilters): Promise<Employee[]> => {
     const params = new URLSearchParams();
-    
-    if (filters?.page) params.append('page', filters.page.toString());
-    if (filters?.page_size) params.append('page_size', filters.page_size.toString());
-    if (filters?.status) params.append('status', filters.status);
-    if (filters?.role) params.append('role', filters.role.toString());
-    if (filters?.station) params.append('station', filters.station.toString());
-    if (filters?.search) params.append('search', filters.search);
-    
+
+    if (filters?.page) params.append("page", filters.page.toString());
+    if (filters?.page_size)
+      params.append("page_size", filters.page_size.toString());
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.role) params.append("role", filters.role.toString());
+    if (filters?.station) params.append("station", filters.station.toString());
+    if (filters?.search) params.append("search", filters.search);
+
     const queryString = params.toString();
-    const endpoint = queryString ? `/staff/?${queryString}` : '/staff/'; // ✅ FIXED: Removed /api/ prefix (already in API_BASE_URL)
-    
+    const endpoint = queryString ? `/staff/?${queryString}` : "/staff/"; // ✅ FIXED: Removed /api/ prefix (already in API_BASE_URL)
+
     const response = await apiCall<any>(endpoint);
-    
+
     // Backend có thể trả về Array hoặc { results: [] }
     if (Array.isArray(response)) {
       return response;
@@ -1279,8 +1370,9 @@ export const employeeAPI = {
    * Create employee
    */
   createEmployee: async (data: Partial<Employee>): Promise<Employee> => {
-    return apiCall<Employee>('/staff/', { // ✅ FIXED: Removed /api/ prefix
-      method: 'POST',
+    return apiCall<Employee>("/staff/", {
+      // ✅ FIXED: Removed /api/ prefix
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
@@ -1288,9 +1380,13 @@ export const employeeAPI = {
   /**
    * Update employee
    */
-  updateEmployee: async (id: number, data: Partial<Employee>): Promise<Employee> => {
-    return apiCall<Employee>(`/staff/${id}/`, { // ✅ FIXED: Removed /api/ prefix
-      method: 'PATCH',
+  updateEmployee: async (
+    id: number,
+    data: Partial<Employee>,
+  ): Promise<Employee> => {
+    return apiCall<Employee>(`/staff/${id}/`, {
+      // ✅ FIXED: Removed /api/ prefix
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
@@ -1299,8 +1395,9 @@ export const employeeAPI = {
    * Delete employee
    */
   deleteEmployee: async (id: number): Promise<void> => {
-    return apiCall<void>(`/staff/${id}/`, { // ✅ FIXED: Removed /api/ prefix
-      method: 'DELETE',
+    return apiCall<void>(`/staff/${id}/`, {
+      // ✅ FIXED: Removed /api/ prefix
+      method: "DELETE",
     });
   },
 };
@@ -1311,7 +1408,7 @@ export const employeeAPI = {
 
 export const stationAPI = {
   getStations: async (): Promise<StationsResponse> => {
-    return apiCall<StationsResponse>('/stations/');
+    return apiCall<StationsResponse>("/stations/");
   },
 
   getStation: async (id: number): Promise<Station> => {
@@ -1319,22 +1416,25 @@ export const stationAPI = {
   },
 
   createStation: async (data: Partial<Station>): Promise<Station> => {
-    return apiCall<Station>('/stations/', {
-      method: 'POST',
+    return apiCall<Station>("/stations/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  updateStation: async (id: number, data: Partial<Station>): Promise<Station> => {
+  updateStation: async (
+    id: number,
+    data: Partial<Station>,
+  ): Promise<Station> => {
     return apiCall<Station>(`/stations/${id}/`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
 
   deleteStation: async (id: number): Promise<void> => {
     return apiCall<void>(`/stations/${id}/`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 };
@@ -1345,30 +1445,35 @@ export const stationAPI = {
 
 export const vehicleTypeAPI = {
   getVehicleTypes: async (): Promise<VehicleTypesResponse> => {
-    return apiCall<VehicleTypesResponse>('/vehicle-types/');
+    return apiCall<VehicleTypesResponse>("/vehicle-types/");
   },
 
   getVehicleType: async (id: number): Promise<VehicleType> => {
     return apiCall<VehicleType>(`/vehicle-types/${id}/`);
   },
 
-  createVehicleType: async (data: Partial<VehicleType>): Promise<VehicleType> => {
-    return apiCall<VehicleType>('/vehicle-types/', {
-      method: 'POST',
+  createVehicleType: async (
+    data: Partial<VehicleType>,
+  ): Promise<VehicleType> => {
+    return apiCall<VehicleType>("/vehicle-types/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
 
-  updateVehicleType: async (id: number, data: Partial<VehicleType>): Promise<VehicleType> => {
+  updateVehicleType: async (
+    id: number,
+    data: Partial<VehicleType>,
+  ): Promise<VehicleType> => {
     return apiCall<VehicleType>(`/vehicle-types/${id}/`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
 
   deleteVehicleType: async (id: number): Promise<void> => {
     return apiCall<void>(`/vehicle-types/${id}/`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 };
@@ -1379,7 +1484,7 @@ export const vehicleTypeAPI = {
 
 export const userAPI = {
   getUsers: async (): Promise<User[]> => {
-    return apiCall<User[]>('/users/');
+    return apiCall<User[]>("/users/");
   },
 
   getUser: async (id: number): Promise<User> => {
@@ -1387,22 +1492,22 @@ export const userAPI = {
   },
 
   createUser: async (data: Partial<User>): Promise<User> => {
-    return apiCall<User>('/users/', {
-      method: 'POST',
+    return apiCall<User>("/users/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
 
   updateUser: async (id: number, data: Partial<User>): Promise<User> => {
     return apiCall<User>(`/users/${id}/`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
 
   deleteUser: async (id: number): Promise<void> => {
     return apiCall<void>(`/users/${id}/`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 };
@@ -1413,7 +1518,7 @@ export const userAPI = {
 
 export const roleAPI = {
   getRoles: async (): Promise<{ results: Role[] }> => {
-    const data = await apiCall<Role[]>('/roles/');
+    const data = await apiCall<Role[]>("/roles/");
     return { results: Array.isArray(data) ? data : [] };
   },
 
@@ -1422,22 +1527,22 @@ export const roleAPI = {
   },
 
   createRole: async (data: Partial<Role>): Promise<Role> => {
-    return apiCall<Role>('/roles/', {
-      method: 'POST',
+    return apiCall<Role>("/roles/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
 
   updateRole: async (id: number, data: Partial<Role>): Promise<Role> => {
     return apiCall<Role>(`/roles/${id}/`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
 
   deleteRole: async (id: number): Promise<void> => {
     return apiCall<void>(`/roles/${id}/`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 };
@@ -1450,20 +1555,24 @@ export const paymentAPI = {
   /**
    * Get payments list with pagination and filters
    */
-  getPayments: async (filters?: PaymentFilters): Promise<PaymentsResponse | Payment[]> => {
+  getPayments: async (
+    filters?: PaymentFilters,
+  ): Promise<PaymentsResponse | Payment[]> => {
     const params = new URLSearchParams();
-    
-    if (filters?.page) params.append('page', filters.page.toString());
-    if (filters?.page_size) params.append('page_size', filters.page_size.toString());
-    if (filters?.status) params.append('status', filters.status);
-    if (filters?.payment_method) params.append('payment_method', filters.payment_method);
-    if (filters?.date_from) params.append('date_from', filters.date_from);
-    if (filters?.date_to) params.append('date_to', filters.date_to);
-    if (filters?.search) params.append('search', filters.search);
-    
+
+    if (filters?.page) params.append("page", filters.page.toString());
+    if (filters?.page_size)
+      params.append("page_size", filters.page_size.toString());
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.payment_method)
+      params.append("payment_method", filters.payment_method);
+    if (filters?.date_from) params.append("date_from", filters.date_from);
+    if (filters?.date_to) params.append("date_to", filters.date_to);
+    if (filters?.search) params.append("search", filters.search);
+
     const queryString = params.toString();
-    const endpoint = queryString ? `/payments/?${queryString}` : '/payments/';
-    
+    const endpoint = queryString ? `/payments/?${queryString}` : "/payments/";
+
     return apiCall<PaymentsResponse | Payment[]>(endpoint);
   },
 
@@ -1478,8 +1587,8 @@ export const paymentAPI = {
    * Create payment
    */
   createPayment: async (data: Partial<Payment>): Promise<Payment> => {
-    return apiCall<Payment>('/payments/', {
-      method: 'POST',
+    return apiCall<Payment>("/payments/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
@@ -1487,9 +1596,12 @@ export const paymentAPI = {
   /**
    * Update payment
    */
-  updatePayment: async (id: number, data: Partial<Payment>): Promise<Payment> => {
+  updatePayment: async (
+    id: number,
+    data: Partial<Payment>,
+  ): Promise<Payment> => {
     return apiCall<Payment>(`/payments/${id}/`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
@@ -1499,16 +1611,18 @@ export const paymentAPI = {
    */
   deletePayment: async (id: number): Promise<void> => {
     return apiCall<void>(`/payments/${id}/`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 
   /**
    * Create payment session for PayOS-style QR flow
    */
-  createPaymentSession: async (data: CreatePaymentRequest): Promise<CreatePaymentResponse> => {
-    return apiCall<CreatePaymentResponse>('/create-payment/', {
-      method: 'POST',
+  createPaymentSession: async (
+    data: CreatePaymentRequest,
+  ): Promise<CreatePaymentResponse> => {
+    return apiCall<CreatePaymentResponse>("/create-payment/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
@@ -1516,8 +1630,12 @@ export const paymentAPI = {
   /**
    * Poll payment status by order code
    */
-  checkPaymentStatus: async (orderCode: number): Promise<CheckPaymentStatusResponse> => {
-    return apiCall<CheckPaymentStatusResponse>(`/check-payment-status/${orderCode}/`);
+  checkPaymentStatus: async (
+    orderCode: number,
+  ): Promise<CheckPaymentStatusResponse> => {
+    return apiCall<CheckPaymentStatusResponse>(
+      `/check-payment-status/${orderCode}/`,
+    );
   },
 };
 
@@ -1530,7 +1648,7 @@ export const pricingAPI = {
    * Get pricings list with pagination and filters
    */
   getPricings: async (): Promise<PricingsResponse> => {
-    return apiCall<PricingsResponse>('/pricings/');
+    return apiCall<PricingsResponse>("/pricings/");
   },
 
   /**
@@ -1544,8 +1662,8 @@ export const pricingAPI = {
    * Create pricing
    */
   createPricing: async (data: Partial<Pricing>): Promise<Pricing> => {
-    return apiCall<Pricing>('/pricings/', {
-      method: 'POST',
+    return apiCall<Pricing>("/pricings/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
@@ -1553,9 +1671,12 @@ export const pricingAPI = {
   /**
    * Update pricing
    */
-  updatePricing: async (id: number, data: Partial<Pricing>): Promise<Pricing> => {
+  updatePricing: async (
+    id: number,
+    data: Partial<Pricing>,
+  ): Promise<Pricing> => {
     return apiCall<Pricing>(`/pricings/${id}/`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
@@ -1565,7 +1686,7 @@ export const pricingAPI = {
    */
   deletePricing: async (id: number): Promise<void> => {
     return apiCall<void>(`/pricings/${id}/`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 };
@@ -1578,19 +1699,25 @@ export const checklistItemAPI = {
   /**
    * Get checklist items list with pagination and filters
    */
-  getChecklistItems: async (filters?: ChecklistFilters): Promise<ChecklistItemsResponse> => {
+  getChecklistItems: async (
+    filters?: ChecklistFilters,
+  ): Promise<ChecklistItemsResponse> => {
     const params = new URLSearchParams();
-    
-    if (filters?.page) params.append('page', filters.page.toString());
-    if (filters?.page_size) params.append('page_size', filters.page_size.toString());
-    if (filters?.category) params.append('category', filters.category);
-    if (filters?.vehicle_type) params.append('vehicle_type', filters.vehicle_type.toString());
-    if (filters?.status) params.append('status', filters.status);
-    if (filters?.search) params.append('search', filters.search);
-    
+
+    if (filters?.page) params.append("page", filters.page.toString());
+    if (filters?.page_size)
+      params.append("page_size", filters.page_size.toString());
+    if (filters?.category) params.append("category", filters.category);
+    if (filters?.vehicle_type)
+      params.append("vehicle_type", filters.vehicle_type.toString());
+    if (filters?.status) params.append("status", filters.status);
+    if (filters?.search) params.append("search", filters.search);
+
     const queryString = params.toString();
-    const endpoint = queryString ? `/checklist-items/?${queryString}` : '/checklist-items/';
-    
+    const endpoint = queryString
+      ? `/checklist-items/?${queryString}`
+      : "/checklist-items/";
+
     return apiCall<ChecklistItemsResponse>(endpoint);
   },
 
@@ -1604,9 +1731,11 @@ export const checklistItemAPI = {
   /**
    * Create checklist item
    */
-  createChecklistItem: async (data: Partial<ChecklistItem>): Promise<ChecklistItem> => {
-    return apiCall<ChecklistItem>('/checklist-items/', {
-      method: 'POST',
+  createChecklistItem: async (
+    data: Partial<ChecklistItem>,
+  ): Promise<ChecklistItem> => {
+    return apiCall<ChecklistItem>("/checklist-items/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
@@ -1614,9 +1743,12 @@ export const checklistItemAPI = {
   /**
    * Update checklist item
    */
-  updateChecklistItem: async (id: number, data: Partial<ChecklistItem>): Promise<ChecklistItem> => {
+  updateChecklistItem: async (
+    id: number,
+    data: Partial<ChecklistItem>,
+  ): Promise<ChecklistItem> => {
     return apiCall<ChecklistItem>(`/checklist-items/${id}/`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
@@ -1626,7 +1758,7 @@ export const checklistItemAPI = {
    */
   deleteChecklistItem: async (id: number): Promise<void> => {
     return apiCall<void>(`/checklist-items/${id}/`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 };
@@ -1640,7 +1772,7 @@ export const permissionAPI = {
    * Get permissions list
    */
   getPermissions: async (): Promise<{ results: Permission[] }> => {
-    const data = await apiCall<Permission[]>('/permissions/');
+    const data = await apiCall<Permission[]>("/permissions/");
     return { results: Array.isArray(data) ? data : [] };
   },
 
@@ -1655,8 +1787,8 @@ export const permissionAPI = {
    * Create permission
    */
   createPermission: async (data: Partial<Permission>): Promise<Permission> => {
-    return apiCall<Permission>('/permissions/', {
-      method: 'POST',
+    return apiCall<Permission>("/permissions/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
@@ -1664,9 +1796,12 @@ export const permissionAPI = {
   /**
    * Update permission
    */
-  updatePermission: async (id: number, data: Partial<Permission>): Promise<Permission> => {
+  updatePermission: async (
+    id: number,
+    data: Partial<Permission>,
+  ): Promise<Permission> => {
     return apiCall<Permission>(`/permissions/${id}/`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
@@ -1676,7 +1811,7 @@ export const permissionAPI = {
    */
   deletePermission: async (id: number): Promise<void> => {
     return apiCall<void>(`/permissions/${id}/`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 };
@@ -1686,7 +1821,7 @@ export const rolePermissionAPI = {
    * Get role permissions list
    */
   getRolePermissions: async (): Promise<{ results: RolePermission[] }> => {
-    const data = await apiCall<RolePermission[]>('/role-permissions/');
+    const data = await apiCall<RolePermission[]>("/role-permissions/");
     return { results: Array.isArray(data) ? data : [] };
   },
 
@@ -1700,9 +1835,11 @@ export const rolePermissionAPI = {
   /**
    * Create role permission
    */
-  createRolePermission: async (data: Partial<RolePermission>): Promise<RolePermission> => {
-    return apiCall<RolePermission>('/role-permissions/', {
-      method: 'POST',
+  createRolePermission: async (
+    data: Partial<RolePermission>,
+  ): Promise<RolePermission> => {
+    return apiCall<RolePermission>("/role-permissions/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
@@ -1710,9 +1847,12 @@ export const rolePermissionAPI = {
   /**
    * Update role permission
    */
-  updateRolePermission: async (id: number, data: Partial<RolePermission>): Promise<RolePermission> => {
+  updateRolePermission: async (
+    id: number,
+    data: Partial<RolePermission>,
+  ): Promise<RolePermission> => {
     return apiCall<RolePermission>(`/role-permissions/${id}/`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
@@ -1722,7 +1862,7 @@ export const rolePermissionAPI = {
    */
   deleteRolePermission: async (id: number): Promise<void> => {
     return apiCall<void>(`/role-permissions/${id}/`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 };
@@ -1735,16 +1875,20 @@ export const analyticsAPI = {
   /**
    * Get analytics overview
    */
-  getOverview: async (filters?: AnalyticsFilters): Promise<AnalyticsOverview> => {
+  getOverview: async (
+    filters?: AnalyticsFilters,
+  ): Promise<AnalyticsOverview> => {
     const params = new URLSearchParams();
-    
-    if (filters?.date_from) params.append('date_from', filters.date_from);
-    if (filters?.date_to) params.append('date_to', filters.date_to);
-    if (filters?.station) params.append('station', filters.station.toString());
-    
+
+    if (filters?.date_from) params.append("date_from", filters.date_from);
+    if (filters?.date_to) params.append("date_to", filters.date_to);
+    if (filters?.station) params.append("station", filters.station.toString());
+
     const queryString = params.toString();
-    const endpoint = queryString ? `/analytics/overview/?${queryString}` : '/analytics/overview/';
-    
+    const endpoint = queryString
+      ? `/analytics/overview/?${queryString}`
+      : "/analytics/overview/";
+
     return apiCall<AnalyticsOverview>(endpoint);
   },
 };
@@ -1757,14 +1901,18 @@ export const systemSettingAPI = {
   /**
    * Get system settings list with optional group filter
    */
-  getSettings: async (filters?: SystemSettingFilters): Promise<SystemSettingsResponse> => {
+  getSettings: async (
+    filters?: SystemSettingFilters,
+  ): Promise<SystemSettingsResponse> => {
     const params = new URLSearchParams();
-    
-    if (filters?.group) params.append('group', filters.group);
-    
+
+    if (filters?.group) params.append("group", filters.group);
+
     const queryString = params.toString();
-    const endpoint = queryString ? `/system-settings/?${queryString}` : '/system-settings/';
-    
+    const endpoint = queryString
+      ? `/system-settings/?${queryString}`
+      : "/system-settings/";
+
     return apiCall<SystemSettingsResponse>(endpoint);
   },
 
@@ -1772,7 +1920,7 @@ export const systemSettingAPI = {
    * Get public settings (no auth required)
    */
   getPublicSettings: async (): Promise<SystemSetting[]> => {
-    return apiCall<SystemSetting[]>('/system-settings/public/', {
+    return apiCall<SystemSetting[]>("/system-settings/public/", {
       requireAuth: false,
     });
   },
@@ -1787,9 +1935,11 @@ export const systemSettingAPI = {
   /**
    * Create setting
    */
-  createSetting: async (data: Partial<SystemSetting>): Promise<SystemSetting> => {
-    return apiCall<SystemSetting>('/system-settings/', {
-      method: 'POST',
+  createSetting: async (
+    data: Partial<SystemSetting>,
+  ): Promise<SystemSetting> => {
+    return apiCall<SystemSetting>("/system-settings/", {
+      method: "POST",
       body: JSON.stringify(data),
     });
   },
@@ -1797,9 +1947,12 @@ export const systemSettingAPI = {
   /**
    * Update setting
    */
-  updateSetting: async (id: number, data: Partial<SystemSetting>): Promise<SystemSetting> => {
+  updateSetting: async (
+    id: number,
+    data: Partial<SystemSetting>,
+  ): Promise<SystemSetting> => {
     return apiCall<SystemSetting>(`/system-settings/${id}/`, {
-      method: 'PATCH',
+      method: "PATCH",
       body: JSON.stringify(data),
     });
   },
@@ -1809,7 +1962,7 @@ export const systemSettingAPI = {
    */
   deleteSetting: async (id: number): Promise<void> => {
     return apiCall<void>(`/system-settings/${id}/`, {
-      method: 'DELETE',
+      method: "DELETE",
     });
   },
 };
@@ -1830,7 +1983,7 @@ export default {
   setRefreshToken,
   isTokenExpired,
   refreshAccessToken,
-  
+
   // API Objects
   orderAPI,
   employeeAPI,
@@ -1845,7 +1998,7 @@ export default {
   rolePermissionAPI,
   analyticsAPI,
   systemSettingAPI,
-  
+
   // Generic API call
   apiCall,
 };

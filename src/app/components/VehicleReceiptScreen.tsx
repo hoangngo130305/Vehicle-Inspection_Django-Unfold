@@ -1,8 +1,18 @@
-import { ArrowLeft, CheckCircle, Camera, Upload, Edit3, QrCode, Check, CreditCard, X } from 'lucide-react';
-import { useState, useRef, useEffect } from 'react';
-import { toast } from 'sonner';
-import { useNavigate, useParams } from 'react-router';
-import { paymentAPI, type CreatePaymentResponse } from '../../lib/api';
+import {
+  ArrowLeft,
+  CheckCircle,
+  Camera,
+  Upload,
+  Edit3,
+  QrCode,
+  Check,
+  CreditCard,
+  X,
+} from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { toast } from "sonner";
+import { useNavigate, useParams } from "react-router";
+import { paymentAPI, type CreatePaymentResponse } from "../../lib/api";
 
 interface ChecklistItem {
   id: string;
@@ -13,86 +23,117 @@ interface ChecklistItem {
 export default function VehicleReceiptScreen() {
   const navigate = useNavigate();
   const { orderId } = useParams();
-  
-  const [step, setStep] = useState<'receipt' | 'payment' | 'success'>('receipt');
+
+  const [step, setStep] = useState<"receipt" | "payment" | "success">(
+    "receipt",
+  );
   const [paymentCountdown, setPaymentCountdown] = useState(300); // 5 minutes
-  const [paymentSession, setPaymentSession] = useState<CreatePaymentResponse | null>(null);
+  const [paymentSession, setPaymentSession] =
+    useState<CreatePaymentResponse | null>(null);
   const [isCreatingPayment, setIsCreatingPayment] = useState(false);
   const [isCheckingPayment, setIsCheckingPayment] = useState(false);
 
   const [checklist, setChecklist] = useState<ChecklistItem[]>([
-    { id: '1', label: 'Ngoại thất xe không bị trầy xước, móp méo', checked: false },
-    { id: '2', label: 'Kính chắn gió, đèn, gương không bị hư hỏng', checked: false },
-    { id: '3', label: 'Lốp xe còn tốt, không bị xẹp hoặc rách', checked: false },
-    { id: '4', label: 'Nội thất sạch sẽ, không bị hư hại', checked: false },
-    { id: '5', label: 'Đầy đủ giấy tờ xe: Đăng ký, bảo hiểm', checked: false },
-    { id: '6', label: 'Tem đăng kiểm mới đã được dán đúng vị trí', checked: false },
+    {
+      id: "1",
+      label: "Ngoại thất xe không bị trầy xước, móp méo",
+      checked: false,
+    },
+    {
+      id: "2",
+      label: "Kính chắn gió, đèn, gương không bị hư hỏng",
+      checked: false,
+    },
+    {
+      id: "3",
+      label: "Lốp xe còn tốt, không bị xẹp hoặc rách",
+      checked: false,
+    },
+    { id: "4", label: "Nội thất sạch sẽ, không bị hư hại", checked: false },
+    { id: "5", label: "Đầy đủ giấy tờ xe: Đăng ký, bảo hiểm", checked: false },
+    {
+      id: "6",
+      label: "Tem đăng kiểm mới đã được dán đúng vị trí",
+      checked: false,
+    },
   ]);
 
   const [photos, setPhotos] = useState<string[]>([]);
-  const [signature, setSignature] = useState<string>('');
-  const [notes, setNotes] = useState('');
+  const [signature, setSignature] = useState<string>("");
+  const [notes, setNotes] = useState("");
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isDrawing, setIsDrawing] = useState(false);
 
   // Mock booking data
   const bookingData = {
-    bookingCode: orderId || 'DK001',
-    licensePlate: '51F-12345',
-    vehicleType: 'Ô tô con 5 chỗ',
-    center: 'Trung tâm 5001D',
-    staffName: 'Lê Văn C',
-    staffCode: 'NV003',
+    bookingCode: orderId || "DK001",
+    licensePlate: "51F-12345",
+    vehicleType: "Ô tô con 5 chỗ",
+    center: "Trung tâm 5001D",
+    staffName: "Lê Văn C",
+    staffCode: "NV003",
     amount: 561000,
   };
 
   const handleCheckToggle = (id: string) => {
-    setChecklist(prev =>
-      prev.map(item =>
-        item.id === id ? { ...item, checked: !item.checked } : item
-      )
+    setChecklist((prev) =>
+      prev.map((item) =>
+        item.id === id ? { ...item, checked: !item.checked } : item,
+      ),
     );
   };
 
   const handlePhotoUpload = () => {
     const mockPhoto = `https://images.unsplash.com/photo-1449965408869-eaa3f722e40d?w=400&h=300&fit=crop`;
-    setPhotos(prev => [...prev, mockPhoto]);
+    setPhotos((prev) => [...prev, mockPhoto]);
   };
 
   const removePhoto = (index: number) => {
-    setPhotos(prev => prev.filter((_, i) => i !== index));
+    setPhotos((prev) => prev.filter((_, i) => i !== index));
   };
 
   // Canvas signature
-  const startDrawing = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const startDrawing = (
+    e:
+      | React.MouseEvent<HTMLCanvasElement>
+      | React.TouchEvent<HTMLCanvasElement>,
+  ) => {
     setIsDrawing(true);
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
-    
+
     const rect = canvas.getBoundingClientRect();
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
-    
+    const x =
+      "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y =
+      "touches" in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+
     ctx.beginPath();
     ctx.moveTo(x, y);
   };
 
-  const draw = (e: React.MouseEvent<HTMLCanvasElement> | React.TouchEvent<HTMLCanvasElement>) => {
+  const draw = (
+    e:
+      | React.MouseEvent<HTMLCanvasElement>
+      | React.TouchEvent<HTMLCanvasElement>,
+  ) => {
     if (!isDrawing) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = 'touches' in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
-    const y = 'touches' in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
+    const x =
+      "touches" in e ? e.touches[0].clientX - rect.left : e.clientX - rect.left;
+    const y =
+      "touches" in e ? e.touches[0].clientY - rect.top : e.clientY - rect.top;
 
     ctx.lineWidth = 2;
-    ctx.lineCap = 'round';
-    ctx.strokeStyle = '#1e40af';
+    ctx.lineCap = "round";
+    ctx.strokeStyle = "#1e40af";
     ctx.lineTo(x, y);
     ctx.stroke();
   };
@@ -108,15 +149,15 @@ export default function VehicleReceiptScreen() {
   const clearSignature = () => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     if (ctx) {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      setSignature('');
+      setSignature("");
     }
   };
 
   useEffect(() => {
-    if (step !== 'payment') return;
+    if (step !== "payment") return;
 
     const interval = window.setInterval(() => {
       setPaymentCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
@@ -126,12 +167,14 @@ export default function VehicleReceiptScreen() {
   }, [step]);
 
   useEffect(() => {
-    if (step !== 'payment' || !paymentSession?.orderCode) return;
+    if (step !== "payment" || !paymentSession?.orderCode) return;
 
     const interval = window.setInterval(async () => {
       try {
-        const statusRes = await paymentAPI.checkPaymentStatus(paymentSession.orderCode);
-        if (statusRes.status === 'SUCCESS') {
+        const statusRes = await paymentAPI.checkPaymentStatus(
+          paymentSession.orderCode,
+        );
+        if (statusRes.status === "SUCCESS") {
           window.clearInterval(interval);
           handlePaymentSuccess();
         }
@@ -144,28 +187,28 @@ export default function VehicleReceiptScreen() {
   }, [step, paymentSession?.orderCode]);
 
   const handleConfirmReceipt = async () => {
-    toast.success('Xác nhận nhận xe thành công!');
-    setStep('payment');
+    toast.success("Xác nhận nhận xe thành công!");
+    setStep("payment");
     setIsCreatingPayment(true);
 
     try {
       const orderIdNum = Number(orderId);
       const res = await paymentAPI.createPaymentSession({
         amount: bookingData.amount,
-        user_id: `customer_${orderId || 'guest'}`,
+        user_id: `customer_${orderId || "guest"}`,
         order_id: Number.isFinite(orderIdNum) ? orderIdNum : undefined,
-        method: 'QR',
+        method: "QR",
       });
       setPaymentSession(res);
     } catch {
-      toast.error('Không tạo được mã QR từ backend, đang dùng QR dự phòng.');
+      toast.error("Không tạo được mã QR từ backend, đang dùng QR dự phòng.");
       setPaymentSession({
         paymentId: 0,
         orderCode: Date.now(),
         qrCode: `PAY_FALLBACK_${bookingData.amount}`,
         qrImageUrl: `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=PAY_FALLBACK_${bookingData.amount}`,
-        checkoutUrl: '',
-        status: 'PENDING',
+        checkoutUrl: "",
+        status: "PENDING",
       });
     } finally {
       setIsCreatingPayment(false);
@@ -177,38 +220,40 @@ export default function VehicleReceiptScreen() {
 
     setIsCheckingPayment(true);
     try {
-      const statusRes = await paymentAPI.checkPaymentStatus(paymentSession.orderCode);
-      if (statusRes.status === 'SUCCESS') {
+      const statusRes = await paymentAPI.checkPaymentStatus(
+        paymentSession.orderCode,
+      );
+      if (statusRes.status === "SUCCESS") {
         handlePaymentSuccess();
       } else {
-        toast.info(statusRes.message || 'Giao dịch chưa hoàn tất.');
+        toast.info(statusRes.message || "Giao dịch chưa hoàn tất.");
       }
     } catch {
-      toast.error('Không kiểm tra được trạng thái thanh toán.');
+      toast.error("Không kiểm tra được trạng thái thanh toán.");
     } finally {
       setIsCheckingPayment(false);
     }
   };
 
   const handlePaymentSuccess = () => {
-    setStep('success');
-    toast.success('Thanh toán thành công!');
+    setStep("success");
+    toast.success("Thanh toán thành công!");
     setTimeout(() => {
-      navigate('/home');
+      navigate("/home");
     }, 2000);
   };
 
-  const allChecked = checklist.every(item => item.checked);
+  const allChecked = checklist.every((item) => item.checked);
   const canConfirm = allChecked && signature;
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
   // STEP 3: Success Screen
-  if (step === 'success') {
+  if (step === "success") {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-5">
         <div className="bg-white rounded-3xl p-8 text-center max-w-sm w-full shadow-lg">
@@ -217,7 +262,8 @@ export default function VehicleReceiptScreen() {
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Hoàn tất!</h2>
           <p className="text-gray-600 mb-6">
-            Đã thanh toán và nhận xe thành công.<br/>
+            Đã thanh toán và nhận xe thành công.
+            <br />
             Chúc bạn lái xe an toàn!
           </p>
           <div className="space-y-3">
@@ -228,7 +274,7 @@ export default function VehicleReceiptScreen() {
               Xem hóa đơn
             </button>
             <button
-              onClick={() => navigate('/home')}
+              onClick={() => navigate("/home")}
               className="w-full py-3 border-2 border-gray-200 text-gray-700 rounded-xl font-semibold hover:bg-gray-50 transition-colors"
             >
               Về trang chủ
@@ -240,7 +286,7 @@ export default function VehicleReceiptScreen() {
   }
 
   // STEP 2: Payment Screen
-  if (step === 'payment') {
+  if (step === "payment") {
     return (
       <div className="min-h-screen bg-gray-50 pb-24">
         {/* Header */}
@@ -250,10 +296,14 @@ export default function VehicleReceiptScreen() {
             <div className="absolute top-10 right-24 w-16 h-16 border-2 border-gray-900 rounded-full"></div>
             <div className="absolute bottom-2 left-6 w-28 h-28 border-2 border-gray-900 rounded-full"></div>
           </div>
-          
+
           <div className="relative z-10">
-            <h1 className="text-gray-900 font-bold text-xl tracking-tight mb-1">Thanh toán dịch vụ</h1>
-            <p className="text-gray-500 text-xs">Quét mã QR để thanh toán chi phí đăng kiểm</p>
+            <h1 className="text-gray-900 font-bold text-xl tracking-tight mb-1">
+              Thanh toán dịch vụ
+            </h1>
+            <p className="text-gray-500 text-xs">
+              Quét mã QR để thanh toán chi phí đăng kiểm
+            </p>
           </div>
         </div>
 
@@ -262,17 +312,23 @@ export default function VehicleReceiptScreen() {
           <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-5 shadow-lg shadow-blue-600/20 text-white">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <p className="text-blue-100 text-xs mb-1 font-medium">Mã đơn hàng</p>
+                <p className="text-blue-100 text-xs mb-1 font-medium">
+                  Mã đơn hàng
+                </p>
                 <p className="font-bold text-lg">{bookingData.bookingCode}</p>
               </div>
               <div className="bg-yellow-500 px-3 py-1.5 rounded-xl">
-                <p className="text-xs font-bold">⏱ {formatTime(paymentCountdown)}</p>
+                <p className="text-xs font-bold">
+                  ⏱ {formatTime(paymentCountdown)}
+                </p>
               </div>
             </div>
-            
+
             <div className="pt-3 border-t border-white/20">
               <p className="text-blue-100 text-xs mb-1">Tổng thanh toán</p>
-              <p className="font-bold text-2xl">{bookingData.amount.toLocaleString('vi-VN')} đ</p>
+              <p className="font-bold text-2xl">
+                {bookingData.amount.toLocaleString("vi-VN")} đ
+              </p>
             </div>
           </div>
 
@@ -280,20 +336,31 @@ export default function VehicleReceiptScreen() {
           <div className="bg-white rounded-2xl p-6 shadow-sm">
             <div className="flex items-center gap-2 mb-4">
               <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                <QrCode className="text-purple-600" size={20} strokeWidth={2.5} />
+                <QrCode
+                  className="text-purple-600"
+                  size={20}
+                  strokeWidth={2.5}
+                />
               </div>
               <div>
-                <h3 className="text-gray-900 font-bold text-sm">Mã QR thanh toán</h3>
-                <p className="text-gray-500 text-xs">Quét bằng ứng dụng ngân hàng</p>
+                <h3 className="text-gray-900 font-bold text-sm">
+                  Mã QR thanh toán
+                </h3>
+                <p className="text-gray-500 text-xs">
+                  Quét bằng ứng dụng ngân hàng
+                </p>
               </div>
             </div>
 
             {/* QR Code */}
             <div className="bg-gray-100 rounded-2xl p-6 flex items-center justify-center mb-4">
               <div className="bg-white p-4 rounded-xl">
-                <img 
-                  src={paymentSession?.qrImageUrl || 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=VietQR_Payment_561000'} 
-                  alt="VietQR" 
+                <img
+                  src={
+                    paymentSession?.qrImageUrl ||
+                    "https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=VietQR_Payment_561000"
+                  }
+                  alt="VietQR"
                   className="w-48 h-48"
                 />
               </div>
@@ -312,14 +379,17 @@ export default function VehicleReceiptScreen() {
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <p className="text-xs text-blue-900">
-                <span className="font-bold">Lưu ý:</span> Vui lòng không thoát khỏi màn hình này cho đến khi thanh toán hoàn tất.
+                <span className="font-bold">Lưu ý:</span> Vui lòng không thoát
+                khỏi màn hình này cho đến khi thanh toán hoàn tất.
               </p>
             </div>
           </div>
 
           {/* Payment Details */}
           <div className="bg-white rounded-2xl p-5 shadow-sm">
-            <h3 className="text-gray-900 font-bold text-sm mb-3">Chi tiết thanh toán</h3>
+            <h3 className="text-gray-900 font-bold text-sm mb-3">
+              Chi tiết thanh toán
+            </h3>
             <div className="space-y-2 text-sm">
               <div className="flex justify-between">
                 <span className="text-gray-600">Phí đăng kiểm</span>
@@ -339,7 +409,9 @@ export default function VehicleReceiptScreen() {
               </div>
               <div className="pt-2 border-t border-gray-200 flex justify-between">
                 <span className="text-gray-900 font-bold">Tổng cộng</span>
-                <span className="text-blue-600 font-bold text-lg">561,000 đ</span>
+                <span className="text-blue-600 font-bold text-lg">
+                  561,000 đ
+                </span>
               </div>
             </div>
           </div>
@@ -351,10 +423,10 @@ export default function VehicleReceiptScreen() {
             className="w-full py-4 bg-gradient-to-r from-green-600 to-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-2xl font-bold text-base shadow-lg hover:from-green-700 hover:to-green-800 active:scale-95 transition-all shadow-green-600/30"
           >
             {isCreatingPayment
-              ? 'Đang tạo mã QR...'
+              ? "Đang tạo mã QR..."
               : isCheckingPayment
-                ? 'Đang kiểm tra thanh toán...'
-                : 'Kiểm tra trạng thái thanh toán'}
+                ? "Đang kiểm tra thanh toán..."
+                : "Kiểm tra trạng thái thanh toán"}
           </button>
 
           <p className="text-gray-400 text-xs text-center">
@@ -375,17 +447,21 @@ export default function VehicleReceiptScreen() {
           <div className="absolute top-10 right-24 w-16 h-16 border-2 border-gray-900 rounded-full"></div>
           <div className="absolute bottom-2 left-6 w-28 h-28 border-2 border-gray-900 rounded-full"></div>
         </div>
-        
+
         <div className="relative z-10">
-          <button 
+          <button
             onClick={() => navigate(-1)}
             className="flex items-center gap-2 text-gray-600 mb-3 -ml-1 hover:text-gray-900 transition-colors"
           >
             <ArrowLeft size={20} strokeWidth={2.5} />
             <span className="text-sm font-semibold">Quay lại</span>
           </button>
-          <h1 className="text-gray-900 font-bold text-xl tracking-tight mb-1">Xác nhận nhận xe</h1>
-          <p className="text-gray-500 text-xs">Kiểm tra tình trạng xe trước khi nhận</p>
+          <h1 className="text-gray-900 font-bold text-xl tracking-tight mb-1">
+            Xác nhận nhận xe
+          </h1>
+          <p className="text-gray-500 text-xs">
+            Kiểm tra tình trạng xe trước khi nhận
+          </p>
         </div>
       </div>
 
@@ -394,14 +470,16 @@ export default function VehicleReceiptScreen() {
         <div className="bg-gradient-to-br from-blue-600 to-blue-700 rounded-2xl p-5 shadow-lg shadow-blue-600/20 text-white">
           <div className="flex items-center justify-between mb-4">
             <div>
-              <p className="text-blue-100 text-xs mb-1 font-medium">Mã đặt lịch</p>
+              <p className="text-blue-100 text-xs mb-1 font-medium">
+                Mã đặt lịch
+              </p>
               <p className="font-bold text-lg">{bookingData.bookingCode}</p>
             </div>
             <div className="bg-white/20 backdrop-blur-sm px-3 py-1.5 rounded-xl">
               <p className="text-xs font-bold">✓ Hoàn thành</p>
             </div>
           </div>
-          
+
           <div className="grid grid-cols-2 gap-3">
             <div>
               <p className="text-blue-100 text-xs mb-1">Biển số xe</p>
@@ -415,7 +493,9 @@ export default function VehicleReceiptScreen() {
 
           <div className="mt-3 pt-3 border-t border-white/20">
             <p className="text-blue-100 text-xs mb-1">Nhân viên giao xe</p>
-            <p className="font-bold text-sm">{bookingData.staffName} - {bookingData.staffCode}</p>
+            <p className="font-bold text-sm">
+              {bookingData.staffName} - {bookingData.staffCode}
+            </p>
           </div>
         </div>
 
@@ -423,12 +503,19 @@ export default function VehicleReceiptScreen() {
         <div className="bg-white rounded-2xl p-5 shadow-sm">
           <div className="flex items-center gap-2 mb-4">
             <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-              <CheckCircle className="text-blue-600" size={20} strokeWidth={2.5} />
+              <CheckCircle
+                className="text-blue-600"
+                size={20}
+                strokeWidth={2.5}
+              />
             </div>
             <div>
-              <h3 className="text-gray-900 font-bold text-sm">Kiểm tra tình trạng xe</h3>
+              <h3 className="text-gray-900 font-bold text-sm">
+                Kiểm tra tình trạng xe
+              </h3>
               <p className="text-gray-500 text-xs">
-                {checklist.filter(i => i.checked).length}/{checklist.length} mục đã kiểm tra
+                {checklist.filter((i) => i.checked).length}/{checklist.length}{" "}
+                mục đã kiểm tra
               </p>
             </div>
           </div>
@@ -439,8 +526,8 @@ export default function VehicleReceiptScreen() {
                 key={item.id}
                 className={`flex items-start gap-3 p-3.5 rounded-xl border-2 cursor-pointer transition-all ${
                   item.checked
-                    ? 'bg-green-50 border-green-500'
-                    : 'bg-gray-50 border-gray-200 hover:border-gray-300'
+                    ? "bg-green-50 border-green-500"
+                    : "bg-gray-50 border-gray-200 hover:border-gray-300"
                 }`}
               >
                 <input
@@ -449,7 +536,9 @@ export default function VehicleReceiptScreen() {
                   onChange={() => handleCheckToggle(item.id)}
                   className="w-5 h-5 mt-0.5 accent-green-600 cursor-pointer"
                 />
-                <span className={`text-sm flex-1 ${item.checked ? 'text-green-900 font-medium' : 'text-gray-700'}`}>
+                <span
+                  className={`text-sm flex-1 ${item.checked ? "text-green-900 font-medium" : "text-gray-700"}`}
+                >
                   {item.label}
                 </span>
               </label>
@@ -462,11 +551,17 @@ export default function VehicleReceiptScreen() {
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-2">
               <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                <Camera className="text-purple-600" size={20} strokeWidth={2.5} />
+                <Camera
+                  className="text-purple-600"
+                  size={20}
+                  strokeWidth={2.5}
+                />
               </div>
               <div>
                 <h3 className="text-gray-900 font-bold text-sm">Hình ảnh xe</h3>
-                <p className="text-gray-500 text-xs">Tùy chọn: Chụp ảnh để lưu trữ</p>
+                <p className="text-gray-500 text-xs">
+                  Tùy chọn: Chụp ảnh để lưu trữ
+                </p>
               </div>
             </div>
             <button
@@ -503,10 +598,16 @@ export default function VehicleReceiptScreen() {
           <label className="block">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-10 h-10 bg-orange-100 rounded-xl flex items-center justify-center">
-                <Edit3 className="text-orange-600" size={20} strokeWidth={2.5} />
+                <Edit3
+                  className="text-orange-600"
+                  size={20}
+                  strokeWidth={2.5}
+                />
               </div>
               <div>
-                <h3 className="text-gray-900 font-bold text-sm">Ghi chú (nếu có)</h3>
+                <h3 className="text-gray-900 font-bold text-sm">
+                  Ghi chú (nếu có)
+                </h3>
                 <p className="text-gray-500 text-xs">Vấn đề hoặc điểm lưu ý</p>
               </div>
             </div>
@@ -527,8 +628,12 @@ export default function VehicleReceiptScreen() {
                 <Edit3 className="text-blue-600" size={20} strokeWidth={2.5} />
               </div>
               <div>
-                <h3 className="text-gray-900 font-bold text-sm">Chữ ký xác nhận</h3>
-                <p className="text-gray-500 text-xs">Ký tên để xác nhận nhận xe</p>
+                <h3 className="text-gray-900 font-bold text-sm">
+                  Chữ ký xác nhận
+                </h3>
+                <p className="text-gray-500 text-xs">
+                  Ký tên để xác nhận nhận xe
+                </p>
               </div>
             </div>
             <button
@@ -554,7 +659,9 @@ export default function VehicleReceiptScreen() {
               className="w-full h-40 cursor-crosshair touch-none bg-gray-50"
             />
           </div>
-          <p className="text-gray-400 text-xs mt-2 text-center">Vẽ chữ ký của bạn ở trên</p>
+          <p className="text-gray-400 text-xs mt-2 text-center">
+            Vẽ chữ ký của bạn ở trên
+          </p>
         </div>
 
         {/* Confirm Button */}
@@ -563,11 +670,13 @@ export default function VehicleReceiptScreen() {
           disabled={!canConfirm}
           className={`w-full py-4 rounded-2xl font-bold text-base shadow-lg transition-all ${
             canConfirm
-              ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 active:scale-95 shadow-blue-600/30'
-              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+              ? "bg-gradient-to-r from-blue-600 to-blue-700 text-white hover:from-blue-700 hover:to-blue-800 active:scale-95 shadow-blue-600/30"
+              : "bg-gray-200 text-gray-400 cursor-not-allowed"
           }`}
         >
-          {canConfirm ? 'Tiếp tục thanh toán →' : '⚠️ Vui lòng hoàn thành checklist & ký tên'}
+          {canConfirm
+            ? "Tiếp tục thanh toán →"
+            : "⚠️ Vui lòng hoàn thành checklist & ký tên"}
         </button>
 
         <p className="text-gray-400 text-xs text-center">
