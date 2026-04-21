@@ -953,6 +953,29 @@ export interface PaymentFilters {
   search?: string;
 }
 
+export interface CreatePaymentRequest {
+  amount: number;
+  user_id?: string;
+  order_id?: number;
+  method?: 'QR' | 'VNPAY' | 'CASH';
+}
+
+export interface CreatePaymentResponse {
+  paymentId: number;
+  orderCode: number;
+  qrCode: string;
+  qrImageUrl: string;
+  checkoutUrl: string;
+  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+}
+
+export interface CheckPaymentStatusResponse {
+  orderCode: number;
+  status: 'PENDING' | 'SUCCESS' | 'FAILED' | 'CANCELLED' | 'REFUNDED';
+  amount: number;
+  message: string;
+}
+
 // ============================================================
 // TYPES - PRICING
 // ============================================================
@@ -1478,6 +1501,23 @@ export const paymentAPI = {
     return apiCall<void>(`/payments/${id}/`, {
       method: 'DELETE',
     });
+  },
+
+  /**
+   * Create payment session for PayOS-style QR flow
+   */
+  createPaymentSession: async (data: CreatePaymentRequest): Promise<CreatePaymentResponse> => {
+    return apiCall<CreatePaymentResponse>('/create-payment/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /**
+   * Poll payment status by order code
+   */
+  checkPaymentStatus: async (orderCode: number): Promise<CheckPaymentStatusResponse> => {
+    return apiCall<CheckPaymentStatusResponse>(`/check-payment-status/${orderCode}/`);
   },
 };
 

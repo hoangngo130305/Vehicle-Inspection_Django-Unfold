@@ -2081,6 +2081,31 @@ class OTPAdmin(admin.ModelAdmin):
 
 
 # ========================================
+# INSPECTION IMAGE REQUIREMENTS
+# ========================================
+
+@admin.register(InspectionImageRequirement)
+class InspectionImageRequirementAdmin(admin.ModelAdmin):
+    list_display = ['id', 'name', 'stage', 'category', 'position', 'is_required', 'is_active', 'sort_order', 'vehicle_type']
+    list_filter = ['stage', 'category', 'is_required', 'is_active']
+    search_fields = ['name']
+    list_editable = ['is_active', 'is_required', 'sort_order']
+    ordering = ['stage', 'sort_order', 'id']
+
+
+# ========================================
+# MEDIA FILES
+# ========================================
+
+@admin.register(MediaFile)
+class MediaFileAdmin(admin.ModelAdmin):
+    list_display = ['id', 'order', 'stage', 'category', 'position', 'requirement', 'created_at']
+    list_filter = ['stage', 'category']
+    search_fields = ['order__id']
+    readonly_fields = ['created_at']
+
+
+# ========================================
 # ẨN GROUPS KHỎI ADMIN SIDEBAR
 # ========================================
 from django.contrib.auth.models import Group

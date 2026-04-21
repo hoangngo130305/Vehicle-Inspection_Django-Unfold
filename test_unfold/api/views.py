@@ -11,11 +11,18 @@ from django.utils import timezone
 from django.http import HttpResponse
 from django.urls import reverse
 from django.conf import settings
+from django.db.models import Q
 from django.core.files.base import ContentFile
 import os
 import uuid
+import json
+import hmac
+import hashlib
 from io import BytesIO
+from urllib.parse import quote
 from PIL import Image
+from payos import PayOS
+from payos.types import CreatePaymentLinkRequest, ItemData
 from .models import *
 from .serializers import *
 from .utils import render_contract_docx, convert_docx_bytes_to_pdf
@@ -75,6 +82,175 @@ def base64_to_file(base64_str, filename_prefix='signature'):
     
     # Create ContentFile
     return ContentFile(image_bytes, name=filename)
+
+
+def get_default_staff_signature_path():
+    """Return the configured default staff signature image path if available."""
+    configured_path = getattr(settings, 'DEFAULT_STAFF_SIGNATURE_PATH', None)
+    if not configured_path:
+        return None
+
+    signature_path = os.fspath(configured_path)
+    if os.path.exists(signature_path):
+        return signature_path
+    return None
+
+
+ORDER_STATUS_LABELS = {
+    'pending': 'Chờ xử lý',
+    'confirmed': 'Đã xác nhận',
+    'assigned': 'Đã phân công',
+    'in_progress': 'Đang thực hiện',
+    'vehicle_received': 'Đã nhận xe',
+    'vehicle_returned': 'Đã trả xe',
+    'completed': 'Hoàn thành',
+    'cancelled': 'Đã hủy',
+}
+
+
+def get_order_status_code(order):
+    if order.status_id and getattr(order.status, 'status_code', None):
+        return order.status.status_code
+    return order.status_legacy
+
+
+def get_order_status_label(order):
+    if order.status_id and getattr(order.status, 'status_name', None):
+        return order.status.status_name
+
+    status_code = get_order_status_code(order)
+    return ORDER_STATUS_LABELS.get(status_code, status_code or 'Không xác định')
+
+
+def set_order_status(order, status_code):
+    try:
+        order.status = OrderStatus.objects.get(status_code=status_code)
+    except OrderStatus.DoesNotExist:
+        order.status = None
+    order.status_legacy = status_code
+
+
+def filter_orders_by_status(queryset, status_code):
+    return queryset.filter(
+        Q(status__status_code=status_code) |
+        Q(status__isnull=True, status_legacy=status_code)
+    )
+
+
+def get_missing_required_images(order, stage):
+    """
+    Trả về danh sách requirement bắt buộc còn thiếu ảnh theo order + stage.
+    Áp dụng cả requirement chung (vehicle_type null) và theo loại xe cụ thể.
+    """
+    vehicle_type = order.vehicle.vehicle_type if order.vehicle_id else None
+    requirements_qs = InspectionImageRequirement.objects.filter(
+        stage=stage,
+        is_required=True,
+        is_active=True,
+    )
+
+    if vehicle_type:
+        requirements_qs = requirements_qs.filter(
+            Q(vehicle_type__isnull=True) | Q(vehicle_type=vehicle_type)
+        )
+    else:
+        requirements_qs = requirements_qs.filter(vehicle_type__isnull=True)
+
+    required_items = list(requirements_qs)
+    if not required_items:
+        return []
+
+    uploaded_requirement_ids = set(
+        MediaFile.objects.filter(
+            order=order,
+            stage=stage,
+            requirement__isnull=False,
+        ).values_list('requirement_id', flat=True)
+    )
+
+    return [item for item in required_items if item.id not in uploaded_requirement_ids]
+
+
+def get_latest_media_by_requirement(order, stage):
+    """Return the latest uploaded media keyed by requirement name for an order/stage."""
+    media_items = MediaFile.objects.filter(
+        order=order,
+        stage=stage,
+        requirement__isnull=False,
+    ).select_related('requirement').order_by('created_at', 'id')
+
+    media_map = {}
+    for item in media_items:
+        media_map[item.requirement.name] = item
+    return media_map
+
+
+def sync_receipt_media_fields(receipt):
+    """Backfill legacy receipt URL fields from media_files so older consumers still see URLs."""
+    media_map = get_latest_media_by_requirement(receipt.order, 'RECEIVE')
+    field_mapping = {
+        'Ảnh mặt trước': 'photo_front_url',
+        'Ảnh mặt sau': 'photo_rear_url',
+        'Ảnh bên trái': 'photo_left_url',
+        'Ảnh bên phải': 'photo_right_url',
+        'Ảnh nội thất': 'photo_interior_url',
+        'Ảnh táp-lô': 'photo_dashboard_url',
+        'Ảnh giấy đăng ký': 'vehicle_registration_url',
+        'Ảnh bảo hiểm': 'vehicle_insurance_url',
+        'Ảnh checklist ngoại thất khi nhận': 'exterior_check_photo',
+        'Ảnh checklist lốp xe khi nhận': 'tires_check_photo',
+        'Ảnh checklist đèn khi nhận': 'lights_check_photo',
+        'Ảnh checklist gương khi nhận': 'mirrors_check_photo',
+        'Ảnh checklist kính khi nhận': 'windows_check_photo',
+        'Ảnh checklist nội thất khi nhận': 'interior_check_photo',
+        'Ảnh checklist động cơ khi nhận': 'engine_check_photo',
+        'Ảnh checklist nhiên liệu khi nhận': 'fuel_check_photo',
+    }
+
+    updated_fields = []
+    for requirement_name, field_name in field_mapping.items():
+        media_item = media_map.get(requirement_name)
+        if media_item and getattr(receipt, field_name) != media_item.url:
+            setattr(receipt, field_name, media_item.url)
+            updated_fields.append(field_name)
+
+    if updated_fields:
+        receipt.save(update_fields=updated_fields)
+
+
+def sync_return_media_fields(return_log):
+    """Backfill legacy return URL fields from media_files so return flow uses one upload path."""
+    media_map = get_latest_media_by_requirement(return_log.order, 'RETURN')
+    field_mapping = {
+        'Ảnh mặt trước khi trả': 'photo_front_url',
+        'Ảnh mặt sau khi trả': 'photo_rear_url',
+        'Ảnh bên trái khi trả': 'photo_left_url',
+        'Ảnh bên phải khi trả': 'photo_right_url',
+        'Ảnh nội thất khi trả': 'photo_interior_url',
+        'Ảnh táp-lô khi trả': 'photo_dashboard_url',
+        'Ảnh checklist ngoại thất khi trả': 'exterior_check_photo',
+        'Ảnh checklist lốp xe khi trả': 'tires_check_photo',
+        'Ảnh checklist đèn khi trả': 'lights_check_photo',
+        'Ảnh checklist gương khi trả': 'mirrors_check_photo',
+        'Ảnh checklist kính khi trả': 'windows_check_photo',
+        'Ảnh checklist nội thất khi trả': 'interior_check_photo',
+        'Ảnh checklist giấy tờ khi trả': 'documents_complete_photo',
+        'Ảnh checklist tem đăng kiểm khi trả': 'stamp_attached_photo',
+        'Ảnh giấy đăng ký khi trả': 'vehicle_registration_url',
+        'Ảnh tem đăng kiểm khi trả': 'stamp_url',
+        'Ảnh giấy chứng nhận kiểm định khi trả': 'inspection_certificate_url',
+        'Ảnh biên lai khi trả': 'receipt_url',
+    }
+
+    updated_fields = []
+    for requirement_name, field_name in field_mapping.items():
+        media_item = media_map.get(requirement_name)
+        if media_item and getattr(return_log, field_name) != media_item.url:
+            setattr(return_log, field_name, media_item.url)
+            updated_fields.append(field_name)
+
+    if updated_fields:
+        return_log.save(update_fields=updated_fields)
 
 
 # ========================================
@@ -799,11 +975,11 @@ class StaffViewSet(viewsets.ReadOnlyModelViewSet):
         
         # Group by status
         orders_by_status = {
-            'pending': orders.filter(status='pending').count(),
-            'confirmed': orders.filter(status='confirmed').count(),
-            'in_progress': orders.filter(status='in_progress').count(),
-            'completed': orders.filter(status='completed').count(),
-            'cancelled': orders.filter(status='cancelled').count(),
+            'pending': filter_orders_by_status(orders, 'pending').count(),
+            'confirmed': filter_orders_by_status(orders, 'confirmed').count(),
+            'in_progress': filter_orders_by_status(orders, 'in_progress').count(),
+            'completed': filter_orders_by_status(orders, 'completed').count(),
+            'cancelled': filter_orders_by_status(orders, 'cancelled').count(),
         }
         
         # Serialize
@@ -1024,7 +1200,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         # Phân công
         order.assigned_staff = staff
-        order.status = 'confirmed'  # Tự động chuyển sang confirmed khi có staff
+        set_order_status(order, 'confirmed')
         order.save()
         
         serializer = self.get_serializer(order)
@@ -1090,7 +1266,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         old_staff = order.assigned_staff
         
         order.assigned_staff = None
-        order.status = 'pending'  # Trở về pending khi chưa có staff
+        set_order_status(order, 'pending')
         order.save()
         
         serializer = self.get_serializer(order)
@@ -1158,7 +1334,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             template_path,
             data,
             customer_sig_path=getattr(receipt.customer_signature, 'path', None),
-            staff_sig_path=getattr(receipt.staff_signature, 'path', None)
+            staff_sig_path=getattr(receipt.staff_signature, 'path', None) or get_default_staff_signature_path()
         )
 
         output_format = request.query_params.get('format', 'docx').lower()
@@ -1246,7 +1422,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         # Lọc theo status
         status = request.query_params.get('status')
         if status:
-            queryset = queryset.filter(status=status)
+            queryset = filter_orders_by_status(queryset, status)
         
         # Lọc theo ngày cụ thể
         date = request.query_params.get('date')
@@ -1326,7 +1502,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             }, status=403)
         
         # Update
-        order.status = new_status
+        set_order_status(order, new_status)
         if staff_notes:
             order.staff_notes = f"{staff_notes}\n{order.staff_notes or ''}"
         order.save()
@@ -1380,16 +1556,17 @@ class OrderViewSet(viewsets.ModelViewSet):
             }, status=403)
         
         # ===== 2. VALIDATE STATUS =====
-        if order.status != 'pending':
+        current_status_code = get_order_status_code(order)
+        if current_status_code != 'pending':
             return Response({
                 'success': False,
-                'error': f'Không thể bắt đầu xử lý. Trạng thái hiện tại: {order.get_status_display()}',
-                'current_status': order.status
+                'error': f'Không thể bắt đầu xử lý. Trạng thái hiện tại: {get_order_status_label(order)}',
+                'current_status': current_status_code
             }, status=400)
         
         # ===== 3. UPDATE STATUS =====
-        previous_status = order.status
-        order.status = 'in_progress'
+        previous_status = current_status_code
+        set_order_status(order, 'in_progress')
         order.save()
         
         # ===== 4. LOG HISTORY =====
@@ -1452,19 +1629,20 @@ class OrderViewSet(viewsets.ModelViewSet):
             }, status=403)
         
         # ===== 2. VALIDATE STATUS =====
-        if order.status != 'in_progress':
+        current_status_code = get_order_status_code(order)
+        if current_status_code != 'in_progress':
             return Response({
                 'success': False,
-                'error': f'Không thể hủy. Trạng thái hiện tại: {order.get_status_display()}',
-                'current_status': order.status
+                'error': f'Không thể hủy. Trạng thái hiện tại: {get_order_status_label(order)}',
+                'current_status': current_status_code
             }, status=400)
         
         # ===== 3. GET REASON (Optional) =====
         reason = request.data.get('reason', '')
         
         # ===== 4. UPDATE STATUS =====
-        previous_status = order.status
-        order.status = 'pending'
+        previous_status = current_status_code
+        set_order_status(order, 'pending')
         order.save()
         
         # ===== 5. LOG HISTORY =====
@@ -1626,8 +1804,9 @@ class OrderViewSet(viewsets.ModelViewSet):
             )
         
         # 5. Cập nhật Order status
-        if order.status in ['confirmed', 'assigned'] and not order.started_at:
-            order.status = 'in_progress'
+        current_status_code = get_order_status_code(order)
+        if current_status_code in ['confirmed', 'assigned'] and not order.started_at:
+            set_order_status(order, 'in_progress')
             order.started_at = timezone.now()
             order.save()
         
@@ -1657,9 +1836,10 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def vehicle_receipt_initialize(self, request, pk=None):
         """
-        ✅ UPDATED 18/03/2026 - API #1: Initialize - Khởi tạo biên bản nhận xe
+        ✅ UPDATED 10/04/2026 - API #1: Initialize - Chỉ khởi tạo biên bản nhận xe
         POST /api/orders/{id}/vehicle-receipt-initialize/
-        Request: { customer_info + customer_signature + payment_confirmed }
+        Chỉ tạo biên bản nhận xe, không nhập thông tin khách hàng,
+        không lưu ghi chú, không tạo hợp đồng, không nhận chữ ký.
         """
         # 1. Kiểm tra quyền - Chỉ staff được nhận xe
         user = request.user
@@ -1681,63 +1861,11 @@ class OrderViewSet(viewsets.ModelViewSet):
                     'created_at': receipt.created_at
                 }
             }, status=400)
-        
-        # 3. Validate serializer
-        serializer = VehicleReceiptInitializeSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response({'success': False, 'errors': serializer.errors}, status=400)
-        
-        data = serializer.validated_data
-        
-        # 4. CẬP NHẬT CUSTOMER INFO (NEW)
-        customer_info = data.get('customer_info', {})
-        if customer_info:
-            customer = order.customer
-            
-            if 'full_name' in customer_info:
-                customer.full_name = customer_info['full_name']
-            if 'birth_date' in customer_info:
-                customer.date_of_birth = customer_info['birth_date']
-            if 'id_number' in customer_info:
-                customer.id_number = customer_info['id_number']
-            if 'id_issue_date' in customer_info:
-                customer.id_issued_date = customer_info['id_issue_date']
-            if 'id_issue_place' in customer_info:
-                customer.id_issued_place = customer_info['id_issue_place']
-            if 'phone' in customer_info:
-                customer.phone = customer_info['phone']
-            if 'address' in customer_info:
-                customer.address = customer_info['address']
-            
-            customer.save()
-        
-        # 5. KIỂM TRA THANH TOÁN (NEW)
-        payment_confirmed = data.get('payment_confirmed', True)
-        if payment_confirmed:
-            if order.payment_status != 'paid':
-                return Response({
-                    'success': False,
-                    'error': 'Đơn hàng chưa được thanh toán',
-                    'payment_required': True,
-                    'amount': float(order.estimated_amount)
-                }, status=400)
-        
-        # 6. TẠO BIÊN BẢN với customer_signature
-        # Convert base64 to file for ImageField
-        customer_sig_file = None
-        if 'customer_signature' in data and data['customer_signature']:
-            try:
-                customer_sig_file = base64_to_file(data['customer_signature'], 'customer_sig')
-            except Exception as e:
-                return Response({
-                    'success': False,
-                    'error': f'Lỗi xử lý chữ ký khách hàng: {str(e)}'
-                }, status=400)
-        
+
+        # 3. TẠO BIÊN BẢN
         receipt = VehicleReceiptLog.objects.create(
             order=order,
             received_by=staff,
-            customer_signature=customer_sig_file,
             status='initialized',
             odometer_reading=0,
             fuel_level='half',
@@ -1750,12 +1878,13 @@ class OrderViewSet(viewsets.ModelViewSet):
             mirrors_condition='',
             wipers_condition='',
             tires_condition='',
-            interior_condition=''
+            interior_condition='',
+            additional_notes=''
         )
-        
+
         return Response({
             'success': True,
-            'message': 'Đã khởi tạo biên bản nhận xe và cập nhật thông tin khách hàng',
+            'message': 'Đã khởi tạo biên bản nhận xe',
             'receipt': {
                 'id': receipt.id,
                 'order_id': order.id,
@@ -1776,13 +1905,14 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'id': order.id,
                 'payment_status': order.payment_status,
                 'estimated_amount': float(order.estimated_amount)
-            }
+            },
+            'request_mode': 'multipart' if request.FILES else 'json'
         }, status=201)
     
     @action(detail=True, methods=['post', 'put'], permission_classes=[IsAuthenticated])
     def vehicle_receipt_vehicle_inspection(self, request, pk=None):
         """
-        API #2: Vehicle Inspection - Lưu 6 ảnh xe
+        API #2: Vehicle Inspection - Xác nhận bước ảnh xe
         POST/PUT /api/orders/{id}/vehicle-receipt-vehicle-inspection/
         """
         # 1. Kiểm tra quyền
@@ -1819,17 +1949,8 @@ class OrderViewSet(viewsets.ModelViewSet):
             }
         )
         
-        # 4. Update 6 ảnh xe
-        for field in ['photo_front_url', 'photo_rear_url', 'photo_left_url', 
-                      'photo_right_url', 'photo_dashboard_url', 'photo_interior_url']:
-            if field in serializer.validated_data:
-                setattr(receipt, field, serializer.validated_data[field])
-        
-        # ===== THÊM MỚI: Update 2 giấy tờ =====
-        if 'vehicle_registration_url' in serializer.validated_data:
-            receipt.vehicle_registration_url = serializer.validated_data['vehicle_registration_url']
-        if 'vehicle_insurance_url' in serializer.validated_data:
-            receipt.vehicle_insurance_url = serializer.validated_data['vehicle_insurance_url']
+        # 4. Đồng bộ ảnh đã upload riêng qua media/upload vào biên bản cũ
+        sync_receipt_media_fields(receipt)
         
         # 5. Update status
         receipt.status = 'vehicle_inspected'
@@ -1838,7 +1959,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         # 6. Return response
         return Response({
             'success': True,
-            'message': 'Đã lưu ảnh xe',
+            'message': 'Đã xác nhận bước ảnh xe. Ảnh được lấy từ media_files.',
             'receipt': VehicleReceiptLogSerializer(receipt).data
         }, status=200)
     
@@ -1893,19 +2014,10 @@ class OrderViewSet(viewsets.ModelViewSet):
             if field in serializer.validated_data:
                 setattr(receipt, field, serializer.validated_data[field])
         
-        # 5. Update 8 ảnh checklist
-        for field in ['exterior_check_photo', 'tires_check_photo', 'lights_check_photo', 
-                      'mirrors_check_photo', 'windows_check_photo', 'interior_check_photo', 
-                      'engine_check_photo', 'fuel_check_photo']:
-            if field in serializer.validated_data:
-                setattr(receipt, field, serializer.validated_data[field])
-        
-        # 5.1. Update 2 ảnh bổ sung (giấy tờ & tem)
-        for field in ['documents_complete_photo', 'stamp_attached_photo']:
-            if field in serializer.validated_data:
-                setattr(receipt, field, serializer.validated_data[field])
-        
-        # 5.2. Update additional_notes
+        # 5. Đồng bộ ảnh checklist đã upload riêng qua media/upload
+        sync_receipt_media_fields(receipt)
+
+        # 5.1. Update additional_notes
         if 'additional_notes' in serializer.validated_data:
             receipt.additional_notes = serializer.validated_data['additional_notes']
         
@@ -1928,30 +2040,24 @@ class OrderViewSet(viewsets.ModelViewSet):
         """
         ✅ UPDATED 18/03/2026 - API #4: Finalize - Hoàn tất biên bản NHẬN XE
         POST /api/orders/{id}/vehicle-receipt-finalize/
-        Request: { staff_signature }
-        CHỈ CẦN staff_signature - customer_signature đã có ở API 1, giấy tờ đã có ở API 2
+        Không yêu cầu body. Không cần chữ ký nhân viên.
         """
         # 1. Kiểm tra quyền
         user = request.user
         if not hasattr(user, 'staff_profile'):
             return Response({'error': 'Chỉ nhân viên mới có quyền nhận xe'}, status=403)
         
-        staff = user.staff_profile
         order = self.get_object()
         
         # 2. Kiểm tra Order status (phải in_progress)
-        if order.status != 'in_progress':
+        current_status_code = order.status.status_code if order.status else order.status_legacy
+        if current_status_code != 'in_progress':
             return Response({
                 'success': False,
-                'error': f'Order phải ở trạng thái in_progress. Hiện tại: {order.status}'
+                'error': f'Order phải ở trạng thái in_progress. Hiện tại: {current_status_code}'
             }, status=400)
         
-        # 3. Validate serializer
-        serializer = VehicleReceiptFinalizeSerializer(data=request.data)
-        if not serializer.is_valid():
-            return Response({'success': False, 'errors': serializer.errors}, status=400)
-        
-        # 4. Lấy receipt (PHẢI đã tồn tại từ API 1)
+        # 3. Lấy receipt (PHẢI đã tồn tại từ API 1)
         if not hasattr(order, 'receipt_log'):
             return Response({
                 'success': False,
@@ -1960,30 +2066,43 @@ class OrderViewSet(viewsets.ModelViewSet):
             }, status=400)
         
         receipt = order.receipt_log
-        
-        # 5. Update staff_signature
-        if 'staff_signature' in serializer.validated_data and serializer.validated_data['staff_signature']:
-            try:
-                staff_sig_file = base64_to_file(serializer.validated_data['staff_signature'], 'staff_sig')
-                receipt.staff_signature = staff_sig_file
-            except Exception as e:
-                return Response({
-                    'success': False,
-                    'error': f'Lỗi xử lý chữ ký nhân viên: {str(e)}'
-                }, status=400)
-        
-        # 6. Update status → completed
+        sync_receipt_media_fields(receipt)
+
+        # 4. Validate required images (stage RECEIVE)
+        missing_requirements = get_missing_required_images(order, stage='RECEIVE')
+        if missing_requirements:
+            return Response({
+                'success': False,
+                'error': 'Thiếu ảnh bắt buộc theo cấu hình trước khi hoàn tất biên bản nhận xe',
+                'missing_requirements': [
+                    {
+                        'id': item.id,
+                        'name': item.name,
+                        'category': item.category,
+                        'position': item.position,
+                        'stage': item.stage,
+                    }
+                    for item in missing_requirements
+                ]
+            }, status=400)
+
+        # 5. Update status → completed
         receipt.status = 'completed'
         receipt.completed_at = timezone.now()
         receipt.save()
         
-        # 7. Update Order status → vehicle_received
-        order.status = 'vehicle_received'
+        # 6. Update Order status → vehicle_received
+        try:
+            vehicle_received_status = OrderStatus.objects.get(status_code='vehicle_received')
+            order.status = vehicle_received_status
+            order.status_legacy = 'vehicle_received'
+        except OrderStatus.DoesNotExist:
+            order.status_legacy = 'vehicle_received'
         if not order.started_at:
             order.started_at = timezone.now()
         order.save()
         
-        # 8. Return response
+        # 7. Return response
         return Response({
             'success': True,
             'message': 'Đã hoàn tất biên bản nhận xe',
@@ -1991,7 +2110,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             'order': {
                 'id': order.id,
                 'order_code': order.order_code,
-                'status': order.status,
+                'status': order.status.status_code if order.status else order.status_legacy,
                 'started_at': order.started_at
             }
         }, status=200)
@@ -1999,12 +2118,10 @@ class OrderViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=['post'], url_path='complete-vehicle-received', permission_classes=[IsAuthenticated])
     def complete_vehicle_received(self, request, pk=None):
         """
-        🎯 NEW - API: Hoàn tất đơn hàng sau khi nhận xe
+        🎯 UPDATED 10/04/2026 - API: Nhập thông tin hợp đồng + chữ ký khách hàng để tạo hợp đồng
         POST /api/orders/{id}/complete-vehicle-received/
-        
-        Chuyển trạng thái: VEHICLE_RECEIVED → COMPLETED
-        ✅ Tự động tạo file hợp đồng (DOCX) với dữ liệu nhận xe
-        Dùng sau khi hoàn tất quá trình nhận xe
+        Nhận multipart/form-data với thông tin khách hàng và customer_signature (file).
+        Không cần staff_signature. Không hoàn tất biên bản ở bước này.
         """
         # 1. Kiểm tra quyền
         user = request.user
@@ -2016,16 +2133,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         order = self.get_object()
         
-        # 2. Kiểm tra Order status (phải vehicle_received)
-        # Note: status is ForeignKey to OrderStatus, so check status_code
-        if not order.status or order.status.status_code != 'vehicle_received':
-            current_status = order.status.status_code if order.status else 'None'
-            return Response({
-                'success': False,
-                'error': f'Order phải ở trạng thái vehicle_received. Hiện tại: {current_status}'
-            }, status=400)
-        
-        # 3. Kiểm tra biên bản nhận xe tồn tại
+        # 2. Kiểm tra biên bản nhận xe tồn tại
         if not hasattr(order, 'receipt_log'):
             return Response({
                 'success': False,
@@ -2033,27 +2141,102 @@ class OrderViewSet(viewsets.ModelViewSet):
             }, status=404)
         
         receipt = order.receipt_log
-        
-        # 4️⃣ TỰ ĐỘNG TẠO FILE HỢP ĐỒNG
-        contract_file_url = None
-        contract_file_error = None
 
-        # Chuẩn bị data
+        raw_customer_info = request.data.get('customer_info', {})
+        if isinstance(raw_customer_info, dict):
+            customer_info = raw_customer_info
+        else:
+            customer_info = {}
+
+        customer_info = {
+            'full_name': request.data.get('customer_name') or customer_info.get('full_name'),
+            'birth_date': request.data.get('customer_date_of_birth') or customer_info.get('birth_date'),
+            'id_number': request.data.get('customer_id_number') or customer_info.get('id_number'),
+            'id_issue_date': request.data.get('customer_id_issued_date') or customer_info.get('id_issue_date'),
+            'id_issue_place': request.data.get('customer_id_issued_place') or customer_info.get('id_issue_place'),
+            'phone': request.data.get('customer_phone') or customer_info.get('phone'),
+            'address': request.data.get('customer_address') or customer_info.get('address'),
+        }
+        additional_notes = request.data.get('additional_notes', '')
+
+        customer = order.customer
+        if customer_info.get('full_name'):
+            customer.full_name = customer_info['full_name']
+        if customer_info.get('birth_date'):
+            customer.date_of_birth = customer_info['birth_date']
+        if customer_info.get('id_number'):
+            customer.id_number = customer_info['id_number']
+        if customer_info.get('id_issue_date'):
+            customer.id_issued_date = customer_info['id_issue_date']
+        if customer_info.get('id_issue_place'):
+            customer.id_issued_place = customer_info['id_issue_place']
+        if customer_info.get('phone'):
+            customer.phone = customer_info['phone']
+        if customer_info.get('address'):
+            customer.address = customer_info['address']
+        customer.save()
+
+        customer_sig_upload = request.FILES.get('customer_signature')
+        if not customer_sig_upload:
+            return Response({
+                'success': False,
+                'error': 'Thiếu customer_signature. Vui lòng gửi file ảnh chữ ký khách hàng bằng multipart/form-data.'
+            }, status=400)
+
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+        max_size = 10 * 1024 * 1024
+        if customer_sig_upload.content_type not in allowed_types:
+            return Response({
+                'success': False,
+                'error': 'customer_signature: Định dạng không hợp lệ. Chỉ chấp nhận JPEG, PNG, WEBP'
+            }, status=400)
+        if customer_sig_upload.size > max_size:
+            return Response({
+                'success': False,
+                'error': 'customer_signature: File quá lớn. Tối đa 10MB'
+            }, status=400)
+
+        file_bytes = customer_sig_upload.read()
+        try:
+            with Image.open(BytesIO(file_bytes)) as img:
+                if img.format not in ('PNG', 'JPEG', 'WEBP'):
+                    raise ValueError('Ảnh không hợp lệ')
+                file_ext = 'jpg' if img.format == 'JPEG' else img.format.lower()
+        except Exception as exc:
+            return Response({
+                'success': False,
+                'error': f'customer_signature: {str(exc)}'
+            }, status=400)
+
+        receipt.customer_signature = ContentFile(
+            file_bytes,
+            name=f"customer_sig_{uuid.uuid4().hex[:8]}.{file_ext}"
+        )
+        if additional_notes:
+            receipt.additional_notes = additional_notes
+        receipt.save()
+
+        template_path = os.path.join(settings.BASE_DIR, 'templates', 'contract_template.docx')
+        if not os.path.exists(template_path):
+            return Response({
+                'success': False,
+                'error': 'Template contract_template.docx không tồn tại'
+            }, status=500)
+
         authorization_start = receipt.received_at if receipt.received_at else timezone.now()
-        authorization_end = timezone.now()  # Hoặc dùng `order.completed_at` sau khi được set trong logic
-
+        authorization_end = timezone.now()
         data = {
             'today_date': timezone.now().strftime('%d/%m/%Y'),
             'order_code': order.order_code,
-            'customer_name': order.customer.full_name,
-            'customer_phone': order.customer.phone,
-            'customer_address': order.customer.address or '',
-            'customer_date_of_birth': str(order.customer.date_of_birth) if order.customer.date_of_birth else '',
-            'customer_id_number': order.customer.id_number or '',
-            'customer_id_issued_date': str(order.customer.id_issued_date) if order.customer.id_issued_date else '',
-            'customer_id_issued_place': order.customer.id_issued_place or '',
+            'customer_name': customer.full_name,
+            'customer_phone': customer.phone,
+            'customer_address': customer.address or '',
+            'customer_date_of_birth': str(customer.date_of_birth) if customer.date_of_birth else '',
+            'customer_id_number': customer.id_number or '',
+            'customer_id_issued_date': str(customer.id_issued_date) if customer.id_issued_date else '',
+            'customer_id_issued_place': customer.id_issued_place or '',
             'vehicle_brand': order.vehicle.brand or '',
-            'vehicle_manufacturer': order.vehicle.brand or '',  # Alias for template compatibility
+            'vehicle_manufacturer': order.vehicle.brand or '',
             'vehicle_plate': order.vehicle.license_plate,
             'vehicle_chassis_number': order.vehicle.chassis_number or '',
             'vehicle_engine_number': order.vehicle.engine_number or '',
@@ -2073,85 +2256,53 @@ class OrderViewSet(viewsets.ModelViewSet):
             'authorization_end_date': authorization_end.strftime('%d/%m/%Y'),
         }
 
-        template_path = os.path.join(settings.BASE_DIR, 'templates', 'contract_template.docx')
-        if not os.path.exists(template_path):
-            contract_file_error = 'Template contract_template.docx not found.'
-        else:
-            # Validate signature data before rendering
-            customer_sig_path = getattr(receipt, 'customer_signature', None)
-            staff_sig_path = getattr(receipt, 'staff_signature', None)
-            
-            # customer_signature bắt buộc (từ initialize API)
-            if not customer_sig_path:
-                contract_file_error = 'Missing customer_signature in receipt_log. Customer must initialize receipt first.'
-            else:
-                # staff_signature optional (từ finalize API, có thể chưa gọi)
-                try:
-                    # Get full file paths for ImageField
-                    customer_sig_file_path = customer_sig_path.path if customer_sig_path else None
-                    staff_sig_file_path = staff_sig_path.path if staff_sig_path else None
-                    
-                    docx_bytes = render_contract_docx(
-                        template_path,
-                        data,
-                        customer_sig_path=customer_sig_file_path,
-                        staff_sig_path=staff_sig_file_path  # Có thể None
-                    )
-
-                    try:
-                        pdf_bytes = convert_docx_bytes_to_pdf(docx_bytes)
-                    except Exception as e:
-                        raise Exception(f'Chuyển DOCX sang PDF thất bại: {type(e).__name__}: {e}')
-
-                    docx_filename = f"order_{order.id}_{uuid.uuid4().hex[:8]}.docx"
-                    docx_content = ContentFile(docx_bytes.getvalue(), name=docx_filename)
-                    order.contract_document = docx_content
-
-                    pdf_filename = f"order_{order.id}_{uuid.uuid4().hex[:8]}.pdf"
-                    pdf_content = ContentFile(pdf_bytes.getvalue(), name=pdf_filename)
-                    order.contract_document_pdf = pdf_content
-
-                    order.contract_document_created_at = timezone.now()
-                    order.save()
-
-                    # Lấy URL từ FileField PDF, tránh trả rỗng.
-                    try:
-                        contract_file_url = order.contract_document_pdf.url
-                    except Exception as ex:
-                        contract_file_error = f"contract_document_pdf.url error: {type(ex).__name__}: {str(ex)}"
-
-                except Exception as e:
-                    contract_file_error = f"Contract render error: {type(e).__name__}: {str(e)}"
-                    import traceback
-                    traceback.print_exc()
-        
-        # 5️⃣ Update Order status → completed
-        # Note: status is ForeignKey, get the OrderStatus object
         try:
-            completed_status = OrderStatus.objects.get(status_code='completed')
-            order.status = completed_status
-        except OrderStatus.DoesNotExist:
-            # If completed status doesn't exist, just update status_legacy field
-            order.status_legacy = 'completed'
+            docx_bytes = render_contract_docx(
+                template_path,
+                data,
+                customer_sig_path=getattr(receipt.customer_signature, 'path', None),
+                staff_sig_path=get_default_staff_signature_path()
+            )
+            pdf_bytes = convert_docx_bytes_to_pdf(docx_bytes)
+        except Exception as exc:
+            return Response({
+                'success': False,
+                'error': f'Tạo hợp đồng thất bại: {type(exc).__name__}: {str(exc)}'
+            }, status=500)
 
-        order.completed_at = timezone.now()
+        docx_filename = f"order_{order.id}_{uuid.uuid4().hex[:8]}.docx"
+        order.contract_document = ContentFile(docx_bytes.getvalue(), name=docx_filename)
+        pdf_filename = f"order_{order.id}_{uuid.uuid4().hex[:8]}.pdf"
+        order.contract_document_pdf = ContentFile(pdf_bytes.getvalue(), name=pdf_filename)
+        order.contract_document_created_at = timezone.now()
+
         order.save()
 
-        # If the contract file got saved to model but URL not set for response, fill it
-        if not contract_file_url and order.contract_document:
+        contract_file_url = None
+        contract_pdf_download_url = None
+        contract_file_error = None
+
+        if order.contract_document:
             try:
                 contract_file_url = order.contract_document.url
             except Exception:
                 contract_file_url = None
 
-        # If contract generation had no error message and still no file, set explicit note
-        if not contract_file_url and not contract_file_error:
-            contract_file_error = 'Contract generation completed but no file URL was created.'
+        if order.contract_document_pdf:
+            try:
+                contract_pdf_download_url = request.build_absolute_uri(
+                    reverse('order-download-contract-pdf', args=[order.id])
+                )
+            except Exception:
+                contract_pdf_download_url = None
+
+        if not order.contract_document and not order.contract_document_pdf:
+            contract_file_error = 'Chưa tạo được hợp đồng trên order.'
 
         # 6️⃣ Return response
         return Response({
             'success': True,
-            'message': 'Đã hoàn tất đơn hàng (nhận xe) & tạo file hợp đồng',
+            'message': 'Đã tạo hợp đồng thành công',
             'order': {
                 'id': order.id,
                 'order_code': order.order_code,
@@ -2159,9 +2310,17 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'status_name': order.status_name,
                 'completed_at': order.completed_at,
                 'contract_file': contract_file_url,
+                'contract_pdf_download_url': contract_pdf_download_url,
                 'contract_file_error': contract_file_error,
                 'contract_admin_link': f'http://{request.get_host()}/admin/api/order/{order.id}/change/'
-            }
+            },
+            'customer': {
+                'id': customer.id,
+                'full_name': customer.full_name,
+                'phone': customer.phone,
+                'id_number': customer.id_number
+            },
+            'request_mode': 'multipart' if request.FILES else 'json'
         }, status=200)
     
     # ========================================
@@ -2260,9 +2419,10 @@ class OrderViewSet(viewsets.ModelViewSet):
         order = self.get_object()
         
         # 2. Kiểm tra Order status (phải in_progress - chỉ được trả xe sau khi bắt đầu)
-        if order.status != 'in_progress':
+        current_status_code = order.status.status_code if order.status else order.status_legacy
+        if current_status_code != 'in_progress':
             return Response({
-                'error': f'Order phải ở trạng thái in_progress. Hiện tại: {order.status}'
+                'error': f'Order phải ở trạng thái in_progress. Hiện tại: {current_status_code}'
             }, status=400)
         
         # 3. Kiểm tra đã có biên bản chưa
@@ -2281,7 +2441,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
         
         # 5. Cập nhật Order status → vehicle_returned
-        order.status = 'vehicle_returned'
+        try:
+            vehicle_returned_status = OrderStatus.objects.get(status_code='vehicle_returned')
+            order.status = vehicle_returned_status
+            order.status_legacy = 'vehicle_returned'
+        except OrderStatus.DoesNotExist:
+            order.status_legacy = 'vehicle_returned'
         order.save()
         
         # 6. Return response
@@ -2298,15 +2463,15 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
             'order': {
                 'id': order.id,
-                'status': order.status,
-                'status_display': order.get_status_display()
+                'status': order.status.status_code if order.status else order.status_legacy,
+                'status_display': get_order_status_label(order)
             }
         }, status=201)
     
     @action(detail=True, methods=['post', 'put'], url_path='vehicle-return-vehicle-inspection', permission_classes=[IsAuthenticated])
     def vehicle_return_vehicle_inspection(self, request, pk=None):
         """
-        API #2: Vehicle Inspection - Chụp 6 ảnh xe KHI TRẢ
+        API #2: Vehicle Inspection - Xác nhận bước ảnh xe KHI TRẢ
         POST /api/orders/{id}/vehicle-return-vehicle-inspection/
         PUT  /api/orders/{id}/vehicle-return-vehicle-inspection/
         """
@@ -2330,14 +2495,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=400)
         
-        # 4. Cập nhật 6 ảnh xe
-        photo_fields = ['photo_front_url', 'photo_rear_url', 'photo_left_url', 
-                       'photo_right_url', 'photo_dashboard_url', 'photo_interior_url']
-        
-        for field in photo_fields:
-            value = serializer.validated_data.get(field)
-            if value:  # Chỉ cập nhật nếu có giá trị
-                setattr(return_log, field, value)
+        # 4. Đồng bộ ảnh đã upload riêng qua media/upload vào biên bản cũ
+        sync_return_media_fields(return_log)
         
         # 5. Update status → vehicle_inspected
         return_log.status = 'vehicle_inspected'
@@ -2346,7 +2505,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         # 6. Return response
         return Response({
             'success': True,
-            'message': 'Đã lưu ảnh xe khi trả',
+            'message': 'Đã xác nhận bước ảnh xe khi trả. Ảnh được lấy từ media_files.',
             'return_log': {
                 'id': return_log.id,
                 'status': return_log.status,
@@ -2386,17 +2545,16 @@ class OrderViewSet(viewsets.ModelViewSet):
         if not serializer.is_valid():
             return Response(serializer.errors, status=400)
         
-        # 4. Cập nhật 8 checkbox + 8 ảnh cho TRẢ XE (UPDATED 16/03/2026 - Tách riêng từ NHẬN XE)
+        # 4. Cập nhật 8 checkbox cho TRẢ XE
         checkbox_fields = ['exterior_ok', 'tires_ok', 'lights_ok', 'mirrors_ok',
                           'windows_ok', 'interior_ok', 'documents_complete_ok', 'stamp_attached_ok']
-        photo_fields = ['exterior_check_photo', 'tires_check_photo', 'lights_check_photo',
-                       'mirrors_check_photo', 'windows_check_photo', 'interior_check_photo',
-                       'documents_complete_photo', 'stamp_attached_photo']
-        
-        for field in checkbox_fields + photo_fields:
+
+        for field in checkbox_fields:
             value = serializer.validated_data.get(field)
             if value is not None:  # Cho phép False
                 setattr(return_log, field, value)
+
+        sync_return_media_fields(return_log)
         
         # 5. Update status → condition_checked
         return_log.status = 'condition_checked'
@@ -2525,9 +2683,10 @@ class OrderViewSet(viewsets.ModelViewSet):
             }, status=404)
         
         # 3. Kiểm tra Order status (phải vehicle_returned)
-        if order.status != 'vehicle_returned':
+        current_status_code = order.status.status_code if order.status else order.status_legacy
+        if current_status_code != 'vehicle_returned':
             return Response({
-                'error': f'Order phải ở trạng thái vehicle_returned. Hiện tại: {order.status}'
+                'error': f'Order phải ở trạng thái vehicle_returned. Hiện tại: {current_status_code}'
             }, status=400)
         
         # 4. Kiểm tra status của biên bản (phải đã qua condition_checked)
@@ -2535,7 +2694,24 @@ class OrderViewSet(viewsets.ModelViewSet):
             return Response({
                 'error': f'Biên bản phải ở trạng thái condition_checked. Hiện tại: {return_log.status}'
             }, status=400)
-        
+
+        # 4b. Kiểm tra ảnh bắt buộc giai đoạn RETURN
+        missing_images = get_missing_required_images(order, 'RETURN')
+        if missing_images:
+            return Response({
+                'error': 'Chưa đủ ảnh bắt buộc cho giai đoạn trả xe',
+                'missing_requirements': [
+                    {
+                        'id': item.id,
+                        'name': item.name,
+                        'category': item.category,
+                        'position': item.position,
+                        'stage': item.stage,
+                    }
+                    for item in missing_images
+                ]
+            }, status=400)
+
         # 5. Validate data
         serializer = VehicleReturnFinalizeSerializer(data=request.data)
         if not serializer.is_valid():
@@ -2543,16 +2719,14 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         # 6. Cập nhật 11 giấy tờ + ghi chú + chữ ký (UPDATED 10/03/2026)
         data = serializer.validated_data
-        
-        # NHÓM A: Giấy đăng ký xe (2 fields)
-        if data.get('vehicle_registration_url'):
-            return_log.vehicle_registration_url = data['vehicle_registration_url']
+
+        sync_return_media_fields(return_log)
+
+        # NHÓM A: Giấy đăng ký xe (1 field text)
         if data.get('registration_number'):
             return_log.registration_number = data['registration_number']
-        
-        # NHÓM B: Tem đăng kiểm (3 fields)
-        if data.get('stamp_url'):
-            return_log.stamp_url = data['stamp_url']
+
+        # NHÓM B: Tem đăng kiểm (2 fields text)
         if data.get('stamp_number'):
             return_log.stamp_number = data['stamp_number']
         if data.get('stamp_expiry_date'):
@@ -2562,15 +2736,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         if data.get('other_documents_urls'):
             return_log.other_documents_urls = data['other_documents_urls']
         
-        # NHÓM D: Biên lai (2 fields)
-        if data.get('receipt_url'):
-            return_log.receipt_url = data['receipt_url']
+        # NHÓM D: Biên lai (1 field text)
         if data.get('receipt_number'):
             return_log.receipt_number = data['receipt_number']
-        
-        # NHÓM E: Giấy chứng nhận kiểm định (3 fields)
-        if data.get('inspection_certificate_url'):
-            return_log.inspection_certificate_url = data['inspection_certificate_url']
+
+        # NHÓM E: Giấy chứng nhận kiểm định (2 fields text)
         if data.get('certificate_number'):
             return_log.certificate_number = data['certificate_number']
         if data.get('certificate_expiry_date'):
@@ -2629,7 +2799,12 @@ class OrderViewSet(viewsets.ModelViewSet):
         return_log.save()
         
         # 9. Update Order status → completed (QUAN TRỌNG)
-        order.status = 'completed'
+        try:
+            completed_status = OrderStatus.objects.get(status_code='completed')
+            order.status = completed_status
+            order.status_legacy = 'completed'
+        except OrderStatus.DoesNotExist:
+            order.status_legacy = 'completed'
         order.completed_at = timezone.now()
         order.save()
         
@@ -2641,7 +2816,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             'order': {
                 'id': order.id,
                 'order_code': order.order_code,
-                'status': order.status,
+                'status': order.status.status_code if order.status else order.status_legacy,
                 'completed_at': order.completed_at
             }
         }
@@ -2771,10 +2946,11 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         # Check order status (chỉ tracking khi assigned/in_progress)
         TRACKABLE_STATUSES = ['assigned', 'in_progress']
-        if order.status not in TRACKABLE_STATUSES:
+        current_status_code = get_order_status_code(order)
+        if current_status_code not in TRACKABLE_STATUSES:
             return Response({
                 'success': False,
-                'error': f'Không thể tracking đơn hàng ở trạng thái "{order.status}"',
+                'error': f'Không thể tracking đơn hàng ở trạng thái "{current_status_code}"',
                 'allowed_statuses': TRACKABLE_STATUSES
             }, status=400)
         
@@ -2962,7 +3138,7 @@ class OrderViewSet(viewsets.ModelViewSet):
         
         response_data = {
             'order_code': order.order_code,
-            'order_status': order.status
+            'order_status': get_order_status_code(order)
         }
         
         # Driver info
@@ -3137,6 +3313,446 @@ class PaymentViewSet(viewsets.ModelViewSet):
             return Payment.objects.filter(order__customer=user.customer_profile)
         
         return Payment.objects.none()
+
+
+PAYMENT_METHOD_MAP = {
+    'QR': 'vietqr',
+    'VNPAY': 'vnpay',
+    'CASH': 'cash',
+}
+
+
+def _get_payos_client():
+    return PayOS(
+        client_id=os.getenv('PAYOS_CLIENT_ID'),
+        api_key=os.getenv('PAYOS_API_KEY'),
+        checksum_key=os.getenv('PAYOS_CHECKSUM_KEY'),
+    )
+
+
+def _mark_payment_paid(payment, transaction_code=None, paid_at=None):
+    paid_time = paid_at or timezone.now()
+    payment.status = 'SUCCESS'
+    payment.paid_at = paid_time
+    if transaction_code:
+        payment.transaction_id = str(transaction_code)
+        payment.transaction_code = str(transaction_code)
+    payment.save(update_fields=['status', 'paid_at', 'transaction_id', 'transaction_code', 'updated_at'])
+
+
+def _sync_payment_status_from_payos(payment):
+    """Đồng bộ trạng thái payment từ PayOS để tránh lệ thuộc hoàn toàn vào webhook."""
+    if not payment or not payment.order_code:
+        return payment
+
+    try:
+        payos_client = _get_payos_client()
+        remote_payment = payos_client.payment_requests.get(payment.order_code)
+    except Exception:
+        return payment
+
+    remote_status = (getattr(remote_payment, 'status', '') or '').upper()
+    remote_paid_amount = getattr(remote_payment, 'amount_paid', 0) or 0
+    remote_transactions = getattr(remote_payment, 'transactions', None) or []
+
+    transaction_code = None
+    if remote_transactions:
+        latest_transaction = remote_transactions[-1]
+        transaction_code = getattr(latest_transaction, 'reference', None) or getattr(latest_transaction, 'id', None)
+
+    if remote_status in ['PAID', 'SUCCESS'] or remote_paid_amount >= int(payment.amount):
+        _mark_payment_paid(payment, transaction_code=transaction_code)
+    elif remote_status in ['CANCELLED', 'CANCELED']:
+        payment.status = 'FAILED'
+        payment.save(update_fields=['status', 'updated_at'])
+    elif remote_status in ['EXPIRED', 'FAILED']:
+        payment.status = 'FAILED'
+        payment.save(update_fields=['status', 'updated_at'])
+
+    return payment
+
+
+def _status_to_public(status_value):
+    status_map = {
+        'PENDING': 'PENDING',
+        'SUCCESS': 'SUCCESS',
+        'FAILED': 'FAILED',
+        # Backward-compat for old records before migration
+        'pending': 'PENDING',
+        'paid': 'SUCCESS',
+        'failed': 'FAILED',
+        'refunded': 'FAILED',
+        'cancelled': 'FAILED',
+    }
+    return status_map.get(status_value, 'PENDING')
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def create_payment(request):
+    """
+    POST /api/create-payment
+    Tạo giao dịch thanh toán và trả về QR + checkout URL.
+    """
+    amount_raw = request.data.get('amount')
+    method = str(request.data.get('method', 'QR')).upper()
+    order_id = request.data.get('order_id')
+    additional_cost_id = request.data.get('additional_cost_id')  # Cho thanh toán chi phí phát sinh trả xe
+
+    # Parse amount
+    amount = None
+    if amount_raw is not None:
+        try:
+            amount = int(amount_raw)
+        except (TypeError, ValueError):
+            return Response({'error': 'Số tiền không hợp lệ'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if amount is not None and amount < 10000:
+        return Response({'error': 'Số tiền tối thiểu là 10.000 VND'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if not order_id and not additional_cost_id:
+        return Response({'error': 'Cần truyền order_id hoặc additional_cost_id'}, status=status.HTTP_400_BAD_REQUEST)
+
+    if method not in PAYMENT_METHOD_MAP:
+        return Response({'error': 'Phương thức thanh toán không hợp lệ'}, status=status.HTTP_400_BAD_REQUEST)
+
+    linked_order = None
+    linked_additional_cost = None
+    payment_type = 'order'
+    description = ''
+
+    # ── Luồng 1: Thanh toán chi phí phát sinh TRẢ XE ──
+    if additional_cost_id:
+        linked_additional_cost = VehicleReturnAdditionalCost.objects.filter(id=additional_cost_id).first()
+        if not linked_additional_cost:
+            return Response({'error': f'Không tìm thấy chi phí phát sinh id={additional_cost_id}'}, status=status.HTTP_404_NOT_FOUND)
+        linked_order = linked_additional_cost.order
+        if amount is None:
+            amount = int(linked_additional_cost.amount)
+        description = f'Chi phí phát sinh: {linked_additional_cost.cost_name} — đơn {linked_order.order_code}'
+        payment_type = 'additional_cost'
+
+    # ── Luồng 2: Thanh toán đơn hàng NHẬN XE ──
+    elif order_id:
+        linked_order = Order.objects.filter(id=order_id).first()
+        if not linked_order:
+            return Response({'error': f'Không tìm thấy đơn hàng id={order_id}'}, status=status.HTTP_404_NOT_FOUND)
+        if amount is None:
+            amount = int(linked_order.estimated_amount + linked_order.additional_amount)
+        description = f'Thanh toán đơn {linked_order.order_code}'
+        payment_type = 'order'
+
+    order_code = int(timezone.now().timestamp() * 1000)
+
+    # Tạo payment link thật từ PayOS để có QR đúng chuẩn ngân hàng/nhà cung cấp.
+    return_url = os.getenv('RETURN_URL')
+    cancel_url = os.getenv('CANCEL_URL')
+    if not return_url or not cancel_url:
+        return Response(
+            {'error': 'Thiếu RETURN_URL hoặc CANCEL_URL trong cấu hình môi trường'},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+    payos_description = description[:25] if description else f"PAY {order_code}"[:25]
+    payos_item_name = 'Thanh toan don'
+
+    try:
+        payos_client = _get_payos_client()
+        payos_request = CreatePaymentLinkRequest(
+            orderCode=order_code,
+            amount=amount,
+            description=payos_description,
+            cancelUrl=cancel_url,
+            returnUrl=return_url,
+            items=[ItemData(name=payos_item_name, quantity=1, price=amount)],
+        )
+        payos_result = payos_client.payment_requests.create(payos_request)
+        checkout_url = payos_result.checkout_url
+        qr_payload = payos_result.qr_code
+        qr_image_url = f"https://api.qrserver.com/v1/create-qr-code/?size=260x260&data={quote(qr_payload)}"
+    except Exception as exc:
+        return Response(
+            {'error': f'Không tạo được payment link từ PayOS: {type(exc).__name__}: {str(exc)}'},
+            status=status.HTTP_502_BAD_GATEWAY,
+        )
+
+    # Khi user thanh toán lại cho cùng đơn hàng, xóa payment cũ để tránh xung đột OneToOne(order).
+    if linked_order:
+        Payment.objects.filter(order=linked_order).delete()
+
+    payment = Payment.objects.create(
+        order=linked_order,
+        order_code=order_code,
+        user_id=(str(linked_order.customer.id) if linked_order and linked_order.customer else None),
+        amount=amount,
+        currency='VND',
+        method=method,
+        payment_method=PAYMENT_METHOD_MAP[method],
+        payment_type=payment_type,
+        status='PENDING',
+        payment_url=checkout_url,
+        qr_code=qr_payload,
+        qr_content=qr_payload,
+        vietqr_code_url=qr_image_url,
+        description=description,
+        notes=f'additional_cost_id={additional_cost_id}' if additional_cost_id else None,
+    )
+
+    return Response({
+        'paymentId': payment.id,
+        'orderCode': order_code,
+        'qrCode': qr_payload,
+        'qrImageUrl': qr_image_url,
+        'checkoutUrl': checkout_url,
+        'status': _status_to_public(payment.status),
+        'paymentType': payment_type,
+        'description': description,
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def check_payment_status(request, order_code):
+    """
+    GET /api/check-payment-status/{order_code}
+    """
+    payment = Payment.objects.filter(order_code=order_code).first()
+    if not payment:
+        return Response({'error': 'Không tìm thấy giao dịch'}, status=status.HTTP_404_NOT_FOUND)
+
+    payment = _sync_payment_status_from_payos(payment)
+
+    public_status = _status_to_public(payment.status)
+    message_map = {
+        'PENDING': 'Đang chờ thanh toán',
+        'SUCCESS': 'Thanh toán thành công',
+        'FAILED': 'Thanh toán thất bại',
+    }
+
+    return Response({
+        'orderCode': payment.order_code,
+        'status': public_status,
+        'amount': int(payment.amount),
+        'message': message_map.get(public_status, 'Đang xử lý'),
+    }, status=status.HTTP_200_OK)
+
+
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def get_order_by_order_code(request, order_code):
+    """
+    GET /api/payment-order/{order_code}
+    Tra cứu order_id tương ứng với orderCode thanh toán.
+    """
+    payment = Payment.objects.select_related('order').filter(order_code=order_code).first()
+    if not payment:
+        return Response({'error': 'Không tìm thấy giao dịch'}, status=status.HTTP_404_NOT_FOUND)
+
+    payment = _sync_payment_status_from_payos(payment)
+    public_status = _status_to_public(payment.status)
+
+    return Response({
+        'orderCode': payment.order_code,
+        'paymentId': payment.id,
+        'orderId': payment.order.id if payment.order else None,
+        'status': public_status,
+        'isPaid': public_status == 'SUCCESS',
+        'paidAt': payment.paid_at,
+    }, status=status.HTTP_200_OK)
+
+
+def _verify_payos_webhook_signature(payload_data, signature_from_webhook):
+    """
+    Xác minh chữ ký webhook từ PayOS.
+    
+    PayOS dùng HMAC_SHA256 để ký webhook.
+    Các trường cần verify: orderCode, amount, description, accountNumber, reference, transactionDateTime, currency
+    (sorted theo alphabet)
+    
+    Args:
+        payload_data: dict chứa dữ liệu từ webhook (cái `data` object)
+        signature_from_webhook: signature string từ webhook
+    
+    Returns:
+        bool: True nếu signature hợp lệ, False nếu không
+    """
+    checksum_key = os.getenv('PAYOS_CHECKSUM_KEY')
+    if not checksum_key:
+        print("⚠️  PAYOS_CHECKSUM_KEY không được cấu hình")
+        return False
+    
+    # Danh sách trường cần verify (sorted alphabet)
+    verify_fields = [
+        'amount',
+        'accountNumber',
+        'currency',
+        'description',
+        'orderCode',
+        'reference',
+        'transactionDateTime',
+    ]
+    
+    # Xây dựng signature string
+    signature_parts = []
+    for field in verify_fields:
+        value = payload_data.get(field, '')
+        if value is not None:
+            signature_parts.append(str(value))
+    
+    signature_str = ''.join(signature_parts)
+    
+    # Compute HMAC_SHA256
+    computed_signature = hmac.new(
+        checksum_key.encode('utf-8'),
+        signature_str.encode('utf-8'),
+        hashlib.sha256
+    ).hexdigest()
+    
+    # So sánh signature
+    is_valid = computed_signature == signature_from_webhook.lower()
+    
+    if not is_valid:
+        print(f"❌ Webhook signature không hợp lệ!")
+        print(f"   Expected: {computed_signature}")
+        print(f"   Got: {signature_from_webhook}")
+    
+    return is_valid
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def webhook_payos(request):
+    """
+    POST /api/webhook/payos
+    Nhận webhook từ PayOS và cập nhật trạng thái thanh toán.
+    
+    Cấu trúc webhook từ PayOS:
+    {
+        "code": "00",
+        "desc": "success",
+        "success": true,
+        "data": {
+            "orderCode": 123,
+            "amount": 3000,
+            "description": "...",
+            "accountNumber": "...",
+            "reference": "TF230204212323",        # Transaction code
+            "transactionDateTime": "2023-02-04 18:25:00",
+            "currency": "VND",
+            "paymentLinkId": "...",
+            "code": "00",
+            "desc": "Thành công"
+        },
+        "signature": "8d8640d802..."
+    }
+    """
+    try:
+        payload = request.data
+        
+        # Trích xuất dữ liệu từ webhook
+        code = str(payload.get('code', ''))
+        desc = payload.get('desc', '')
+        success = payload.get('success', False)
+        data = payload.get('data', {}) or {}
+        signature = payload.get('signature', '')
+        
+        # Lấy thông tin thanh toán
+        order_code = data.get('orderCode')
+        amount = data.get('amount')
+        transaction_ref = data.get('reference')  # Reference từ PayOS = transaction code
+        payment_code = data.get('code')  # Status code trong data
+        
+        # Xác minh signature
+        if not _verify_payos_webhook_signature(data, signature):
+            PaymentLog.objects.create(
+                payment=None,
+                order_code=order_code,
+                type='WEBHOOK',
+                raw_data=json.dumps(payload, ensure_ascii=False),
+                status_code=code,
+                ip_address=request.META.get('REMOTE_ADDR'),
+                notes='❌ Signature không hợp lệ'
+            )
+            return Response(
+                {'error': 'Invalid signature'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
+        
+        # Tìm payment từ order_code
+        payment = Payment.objects.filter(order_code=order_code).first()
+        
+        if not payment:
+            # Log webhook nhưng không tìm thấy payment
+            PaymentLog.objects.create(
+                payment=None,
+                order_code=order_code,
+                type='WEBHOOK',
+                raw_data=json.dumps(payload, ensure_ascii=False),
+                status_code=code,
+                ip_address=request.META.get('REMOTE_ADDR'),
+                notes=f'⚠️  Không tìm thấy payment với order_code={order_code}'
+            )
+            return Response({'success': False}, status=status.HTTP_404_NOT_FOUND)
+        
+        # Cập nhật trạng thái thanh toán
+        if payment_code == '00' and success:
+            # Thanh toán thành công
+            payment.status = 'SUCCESS'
+            payment.paid_at = timezone.now()
+            
+            if transaction_ref:
+                payment.transaction_id = str(transaction_ref)
+                payment.transaction_code = str(transaction_ref)
+            
+            payment.save(update_fields=['status', 'paid_at', 'transaction_id', 'transaction_code', 'updated_at'])
+            
+            # ── Luồng 2: Thanh toán đơn hàng NHẬN XE ──
+            if payment.payment_type == 'order' and payment.order:
+                payment.order.payment_status = 'paid'
+                payment.order.payment_completed_at = timezone.now()
+                if payment.payment_method:
+                    payment.order.payment_method = payment.payment_method
+                payment.order.save(update_fields=['payment_status', 'payment_completed_at', 'payment_method', 'updated_at'])
+            
+            # ── Luồng 1: Thanh toán chi phí phát sinh TRẢ XE ──
+            elif payment.payment_type == 'additional_cost' and payment.notes:
+                try:
+                    cost_id = int(payment.notes.replace('additional_cost_id=', ''))
+                    cost = VehicleReturnAdditionalCost.objects.filter(id=cost_id).first()
+                    if cost:
+                        cost.payment_status = 'paid'
+                        cost.paid_at = timezone.now()
+                        cost.transaction_id = str(transaction_ref) if transaction_ref else None
+                        cost.save(update_fields=['payment_status', 'paid_at', 'transaction_id', 'updated_at'])
+                except (ValueError, TypeError) as e:
+                    print(f"⚠️  Lỗi xử lý additional_cost: {e}")
+            
+            log_notes = '✅ Thanh toán thành công'
+        else:
+            # Thanh toán thất bại
+            payment.status = 'FAILED'
+            payment.save(update_fields=['status', 'updated_at'])
+            log_notes = f'❌ Thanh toán thất bại: {desc}'
+        
+        # Log webhook
+        PaymentLog.objects.create(
+            payment=payment,
+            order_code=order_code,
+            type='WEBHOOK',
+            raw_data=json.dumps(payload, ensure_ascii=False),
+            status_code=code,
+            ip_address=request.META.get('REMOTE_ADDR'),
+            notes=log_notes
+        )
+        
+        return Response({'success': True}, status=status.HTTP_200_OK)
+    
+    except Exception as exc:
+        print(f"❌ Lỗi xử lý webhook PayOS: {type(exc).__name__}: {str(exc)}")
+        return Response(
+            {'error': str(exc)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
 
 
 class TimeSlotViewSet(viewsets.ModelViewSet):
@@ -3425,7 +4041,7 @@ class RatingViewSet(viewsets.ModelViewSet):
 @permission_classes([IsAuthenticated])
 def upload_image(request):
     """
-    Upload ảnh cho quy trình nhận xe
+    Legacy upload ảnh (mock URL)
     
     POST /api/upload-image/
     Content-Type: multipart/form-data
@@ -3493,6 +4109,174 @@ def upload_image(request):
         'category': category,
         'message': '⚠️ MOCK URL - Cần tích hợp cloud storage trong production'
     }, status=200)
+
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def media_upload_v1(request):
+    """
+    POST /api/v1/media/upload/
+    Upload ảnh và lưu metadata vào bảng media_files.
+    """
+    uploaded_file = request.FILES.get('file')
+    if not uploaded_file:
+        return Response({
+            'status': 'error',
+            'message': 'Thiếu file. Vui lòng gửi multipart/form-data với key "file".'
+        }, status=400)
+
+    order_id = request.data.get('order_id')
+    if not order_id:
+        return Response({
+            'status': 'error',
+            'message': 'Thiếu order_id'
+        }, status=400)
+
+    try:
+        order = Order.objects.get(id=order_id)
+    except Order.DoesNotExist:
+        return Response({
+            'status': 'error',
+            'message': 'Order không tồn tại'
+        }, status=404)
+
+    requirement_id = request.data.get('requirement_id')
+    if not requirement_id:
+        return Response({
+            'status': 'error',
+            'message': 'Thiếu requirement_id'
+        }, status=400)
+
+    try:
+        requirement = InspectionImageRequirement.objects.get(id=requirement_id, is_active=True)
+    except InspectionImageRequirement.DoesNotExist:
+        return Response({
+            'status': 'error',
+            'message': 'requirement_id không hợp lệ hoặc đã bị vô hiệu hóa'
+        }, status=400)
+
+    stage = (request.data.get('stage') or requirement.stage or '').upper()
+    category = (request.data.get('category') or requirement.category or '').upper()
+    position = (request.data.get('position') or requirement.position or '').upper()
+
+    valid_stages = {item[0] for item in InspectionImageRequirement.STAGE_CHOICES}
+    valid_categories = {item[0] for item in InspectionImageRequirement.CATEGORY_CHOICES}
+    valid_positions = {item[0] for item in InspectionImageRequirement.POSITION_CHOICES}
+
+    if stage not in valid_stages:
+        return Response({'status': 'error', 'message': 'stage không hợp lệ'}, status=400)
+    if category not in valid_categories:
+        return Response({'status': 'error', 'message': 'category không hợp lệ'}, status=400)
+    if position not in valid_positions:
+        return Response({'status': 'error', 'message': 'position không hợp lệ'}, status=400)
+
+    if requirement.stage != stage or requirement.category != category or requirement.position != position:
+        return Response({
+            'status': 'error',
+            'message': 'Thông tin stage/category/position không khớp requirement_id'
+        }, status=400)
+
+    allowed_types = {'image/jpeg', 'image/jpg', 'image/png', 'image/webp'}
+    if uploaded_file.content_type not in allowed_types:
+        return Response({
+            'status': 'error',
+            'message': 'Định dạng file không hợp lệ. Chỉ chấp nhận JPEG, PNG, WEBP.'
+        }, status=400)
+
+    max_size = 10 * 1024 * 1024
+    if uploaded_file.size > max_size:
+        return Response({
+            'status': 'error',
+            'message': 'File quá lớn. Tối đa 10MB.'
+        }, status=400)
+
+    media = MediaFile(
+        order=order,
+        requirement=requirement,
+        stage=stage,
+        category=category,
+        position=position,
+        file=uploaded_file,
+        file_type=uploaded_file.content_type,
+        file_size=uploaded_file.size,
+    )
+
+    if hasattr(request.user, 'staff_profile'):
+        media.created_by = request.user.staff_profile
+
+    media.save()
+    file_url = request.build_absolute_uri(media.file.url)
+    media.url = file_url
+    media.thumbnail_url = file_url
+    media.save(update_fields=['url', 'thumbnail_url'])
+
+    return Response({
+        'status': 'success',
+        'data': {
+            'id': media.id,
+            'url': media.url,
+            'thumbnail_url': media.thumbnail_url,
+            'category': media.category,
+            'position': media.position,
+            'stage': media.stage,
+            'requirement_id': media.requirement_id,
+            'order_id': media.order_id,
+            'file_type': media.file_type,
+            'file_size': media.file_size,
+        }
+    }, status=201)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def media_list_v1(request):
+    """
+    GET /api/v1/media/?order_id=123
+    """
+    order_id = request.query_params.get('order_id') or request.query_params.get('order')
+    if not order_id:
+        return Response({'status': 'error', 'message': 'Thiếu order_id (hoặc order)'}, status=400)
+
+    queryset = MediaFile.objects.filter(order_id=order_id).order_by('created_at')
+    stage = request.query_params.get('stage')
+    if stage:
+        queryset = queryset.filter(stage=stage.strip().upper())
+
+    data = [
+        {
+            'id': item.id,
+            'url': item.url,
+            'thumbnail_url': item.thumbnail_url,
+            'category': item.category,
+            'position': item.position,
+            'stage': item.stage,
+            'requirement_id': item.requirement_id,
+            'created_at': item.created_at,
+        }
+        for item in queryset
+    ]
+
+    return Response({'status': 'success', 'data': data}, status=200)
+
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def image_requirements_v1(request):
+    """
+    GET /api/v1/image-requirements/
+    """
+    queryset = InspectionImageRequirement.objects.filter(is_active=True)
+
+    stage = request.query_params.get('stage')
+    if stage:
+        queryset = queryset.filter(stage=stage.upper())
+
+    vehicle_type_id = request.query_params.get('vehicle_type_id')
+    if vehicle_type_id:
+        queryset = queryset.filter(Q(vehicle_type_id=vehicle_type_id) | Q(vehicle_type__isnull=True))
+
+    serializer = InspectionImageRequirementSerializer(queryset.order_by('sort_order', 'id'), many=True)
+    return Response({'status': 'success', 'data': serializer.data}, status=200)
 
 
 # ========================================
@@ -3596,75 +4380,7 @@ class VehicleReturnAdditionalCostViewSet(viewsets.ModelViewSet):
         })
     
     # ===== ✅✅ NEW - PAYMENT APIS (10/03/2026) =====
-    
-    @action(methods=['post'], detail=True, url_path='request-payment-qr')
-    def request_payment_qr(self, request, pk=None):
-        """
-        POST /api/vehicle-return-additional-costs/{id}/request-payment-qr/
-        
-        Tạo mã QR VietQR cho khách quét thanh toán chi phí phát sinh
-        
-        Request body: {} (không cần)
-        
-        Response:
-        {
-            "success": true,
-            "qr_code_url": "https://...",
-            "qr_content": {...},
-            "amount": 150000.00,
-            "message": "Đã tạo mã QR thanh toán"
-        }
-        """
-        cost = self.get_object()
-        
-        # Validate
-        if cost.payment_status == 'paid':
-            return Response({
-                'success': False,
-                'error': 'Chi phí này đã được thanh toán'
-            }, status=400)
-        
-        # ✅ Generate QR code (Mock for now - TODO: integrate real VietQR API)
-        import uuid
-        import json
-        
-        # Generate QR content
-        qr_content = {
-            'bank_id': '970422',  # VCB
-            'account_no': '1234567890',
-            'account_name': 'TRAM DANG KIEM',
-            'amount': float(cost.amount),
-            'description': f'Thanh toan chi phi {cost.cost_name} - Don {cost.order.order_code}',
-            'transaction_id': f'VPPS{uuid.uuid4().hex[:8].upper()}'
-        }
-        
-        # Mock QR URL (VietQR format)
-        mock_qr_url = f'https://img.vietqr.io/image/970422-1234567890-compact2.jpg?amount={int(cost.amount)}&addInfo={qr_content["description"]}'
-        
-        # Update cost
-        cost.payment_method = 'qr'
-        cost.payment_status = 'processing'
-        cost.qr_code_url = mock_qr_url
-        cost.qr_content = json.dumps(qr_content)
-        cost.transaction_id = qr_content['transaction_id']
-        cost.save()
-        
-        # ✅ TODO: Send notification to customer
-        # - Create Notification record
-        # - Send push notification via Firebase
-        # - Send SMS if needed
-        
-        serializer = self.get_serializer(cost)
-        
-        return Response({
-            'success': True,
-            'qr_code_url': mock_qr_url,
-            'qr_content': qr_content,
-            'amount': float(cost.amount),
-            'cost': serializer.data,
-            'message': '✅ Đã tạo mã QR thanh toán. Khách hàng có thể quét mã để thanh toán.'
-        })
-    
+
     @action(methods=['post'], detail=True, url_path='confirm-cash-payment')
     def confirm_cash_payment(self, request, pk=None):
         """
@@ -3886,7 +4602,7 @@ def assign_staff_ajax(request):
             staff = Staff.objects.get(id=staff_id)
             
             order.assigned_staff = staff
-            order.status = 'assigned'  # Update status
+            set_order_status(order, 'assigned')
             order.save()
             
             return JsonResponse({
@@ -3932,7 +4648,7 @@ def random_assign_staff_ajax(request):
             random_staff = random.choice(active_staff)
             
             order.assigned_staff = random_staff
-            order.status = 'assigned'
+            set_order_status(order, 'assigned')
             order.save()
             
             return JsonResponse({

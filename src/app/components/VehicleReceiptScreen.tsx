@@ -1,7 +1,8 @@
 import { ArrowLeft, CheckCircle, Camera, Upload, Edit3, QrCode, Check, CreditCard, X } from 'lucide-react';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { toast } from 'sonner';
 import { useNavigate, useParams } from 'react-router';
+import { paymentAPI, type CreatePaymentResponse } from '../../lib/api';
 
 interface ChecklistItem {
   id: string;
@@ -15,6 +16,9 @@ export default function VehicleReceiptScreen() {
   
   const [step, setStep] = useState<'receipt' | 'payment' | 'success'>('receipt');
   const [paymentCountdown, setPaymentCountdown] = useState(300); // 5 minutes
+  const [paymentSession, setPaymentSession] = useState<CreatePaymentResponse | null>(null);
+  const [isCreatingPayment, setIsCreatingPayment] = useState(false);
+  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
 
   const [checklist, setChecklist] = useState<ChecklistItem[]>([
     { id: '1', label: 'Ngoại thất xe không bị trầy xước, móp méo', checked: false },
@@ -111,20 +115,79 @@ export default function VehicleReceiptScreen() {
     }
   };
 
-  const handleConfirmReceipt = () => {
+  useEffect(() => {
+    if (step !== 'payment') return;
+
+    const interval = window.setInterval(() => {
+      setPaymentCountdown((prev) => (prev <= 1 ? 0 : prev - 1));
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [step]);
+
+  useEffect(() => {
+    if (step !== 'payment' || !paymentSession?.orderCode) return;
+
+    const interval = window.setInterval(async () => {
+      try {
+        const statusRes = await paymentAPI.checkPaymentStatus(paymentSession.orderCode);
+        if (statusRes.status === 'SUCCESS') {
+          window.clearInterval(interval);
+          handlePaymentSuccess();
+        }
+      } catch {
+        // Keep polling quietly if API is temporarily unavailable.
+      }
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [step, paymentSession?.orderCode]);
+
+  const handleConfirmReceipt = async () => {
     toast.success('Xác nhận nhận xe thành công!');
     setStep('payment');
-    
-    // Start countdown
-    const interval = setInterval(() => {
-      setPaymentCountdown(prev => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          return 0;
-        }
-        return prev - 1;
+    setIsCreatingPayment(true);
+
+    try {
+      const orderIdNum = Number(orderId);
+      const res = await paymentAPI.createPaymentSession({
+        amount: bookingData.amount,
+        user_id: `customer_${orderId || 'guest'}`,
+        order_id: Number.isFinite(orderIdNum) ? orderIdNum : undefined,
+        method: 'QR',
       });
-    }, 1000);
+      setPaymentSession(res);
+    } catch {
+      toast.error('Không tạo được mã QR từ backend, đang dùng QR dự phòng.');
+      setPaymentSession({
+        paymentId: 0,
+        orderCode: Date.now(),
+        qrCode: `PAY_FALLBACK_${bookingData.amount}`,
+        qrImageUrl: `https://api.qrserver.com/v1/create-qr-code/?size=260x260&data=PAY_FALLBACK_${bookingData.amount}`,
+        checkoutUrl: '',
+        status: 'PENDING',
+      });
+    } finally {
+      setIsCreatingPayment(false);
+    }
+  };
+
+  const handleCheckPaymentStatus = async () => {
+    if (!paymentSession?.orderCode) return;
+
+    setIsCheckingPayment(true);
+    try {
+      const statusRes = await paymentAPI.checkPaymentStatus(paymentSession.orderCode);
+      if (statusRes.status === 'SUCCESS') {
+        handlePaymentSuccess();
+      } else {
+        toast.info(statusRes.message || 'Giao dịch chưa hoàn tất.');
+      }
+    } catch {
+      toast.error('Không kiểm tra được trạng thái thanh toán.');
+    } finally {
+      setIsCheckingPayment(false);
+    }
   };
 
   const handlePaymentSuccess = () => {
@@ -181,7 +244,7 @@ export default function VehicleReceiptScreen() {
     return (
       <div className="min-h-screen bg-gray-50 pb-24">
         {/* Header */}
-        <div className="bg-white px-5 pt-10 pb-6 rounded-b-[2rem] shadow-md border-b border-gray-100 relative overflow-hidden sticky top-0 z-40">
+        <div className="bg-white px-5 pt-10 pb-6 rounded-b-[2rem] shadow-md border-b border-gray-100 overflow-hidden sticky top-0 z-40">
           <div className="absolute inset-0 opacity-[0.04]">
             <div className="absolute top-6 right-8 w-24 h-24 border-2 border-gray-900 rounded-full"></div>
             <div className="absolute top-10 right-24 w-16 h-16 border-2 border-gray-900 rounded-full"></div>
@@ -225,16 +288,27 @@ export default function VehicleReceiptScreen() {
               </div>
             </div>
 
-            {/* Mock QR Code */}
+            {/* QR Code */}
             <div className="bg-gray-100 rounded-2xl p-6 flex items-center justify-center mb-4">
               <div className="bg-white p-4 rounded-xl">
                 <img 
-                  src="https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=VietQR_Payment_561000" 
+                  src={paymentSession?.qrImageUrl || 'https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=VietQR_Payment_561000'} 
                   alt="VietQR" 
                   className="w-48 h-48"
                 />
               </div>
             </div>
+
+            {paymentSession?.checkoutUrl ? (
+              <a
+                href={paymentSession.checkoutUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center justify-center w-full mb-4 py-2.5 rounded-xl border border-blue-300 text-blue-700 font-semibold text-sm hover:bg-blue-50 transition-colors"
+              >
+                Mở trang thanh toán PayOS
+              </a>
+            ) : null}
 
             <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
               <p className="text-xs text-blue-900">
@@ -270,12 +344,17 @@ export default function VehicleReceiptScreen() {
             </div>
           </div>
 
-          {/* Mock Payment Button */}
+          {/* Payment action */}
           <button
-            onClick={handlePaymentSuccess}
-            className="w-full py-4 bg-gradient-to-r from-green-600 to-green-700 text-white rounded-2xl font-bold text-base shadow-lg hover:from-green-700 hover:to-green-800 active:scale-95 transition-all shadow-green-600/30"
+            onClick={handleCheckPaymentStatus}
+            disabled={isCreatingPayment || isCheckingPayment || !paymentSession}
+            className="w-full py-4 bg-gradient-to-r from-green-600 to-green-700 disabled:opacity-60 disabled:cursor-not-allowed text-white rounded-2xl font-bold text-base shadow-lg hover:from-green-700 hover:to-green-800 active:scale-95 transition-all shadow-green-600/30"
           >
-            ✓ Xác nhận đã thanh toán
+            {isCreatingPayment
+              ? 'Đang tạo mã QR...'
+              : isCheckingPayment
+                ? 'Đang kiểm tra thanh toán...'
+                : 'Kiểm tra trạng thái thanh toán'}
           </button>
 
           <p className="text-gray-400 text-xs text-center">
@@ -290,7 +369,7 @@ export default function VehicleReceiptScreen() {
   return (
     <div className="min-h-screen bg-gray-50 pb-24">
       {/* Header */}
-      <div className="bg-white px-5 pt-10 pb-6 rounded-b-[2rem] shadow-md border-b border-gray-100 relative overflow-hidden sticky top-0 z-40">
+      <div className="bg-white px-5 pt-10 pb-6 rounded-b-[2rem] shadow-md border-b border-gray-100 overflow-hidden sticky top-0 z-40">
         <div className="absolute inset-0 opacity-[0.04]">
           <div className="absolute top-6 right-8 w-24 h-24 border-2 border-gray-900 rounded-full"></div>
           <div className="absolute top-10 right-24 w-16 h-16 border-2 border-gray-900 rounded-full"></div>

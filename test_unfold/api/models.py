@@ -997,8 +997,41 @@ class OrderChecklist(models.Model):
 # 7. PAYMENT
 # ========================================
 
+class Transaction(models.Model):
+    """
+    Bảng: transactions
+    Lưu thông tin giao dịch nạp tiền (bảng gốc, đơn giản hơn payments).
+    """
+    STATUS_CHOICES = (
+        ('PENDING', 'Chờ xử lý'),
+        ('SUCCESS', 'Thành công'),
+        ('FAILED', 'Thất bại'),
+        ('CANCELLED', 'Đã hủy'),
+    )
+
+    order_code = models.BigIntegerField(unique=True, null=True, blank=True)
+    user_id = models.CharField(max_length=100, null=True, blank=True)
+    amount = models.BigIntegerField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'transactions'
+        verbose_name = 'Giao dịch'
+        verbose_name_plural = 'Giao dịch'
+
+    def __str__(self):
+        return f"TX#{self.order_code} — {self.user_id} — {self.amount:,}đ [{self.status}]"
+
+
 class Payment(models.Model):
     """Bảng: payments"""
+    METHOD_CHOICES = (
+        ('QR', 'QR'),
+        ('VNPAY', 'VNPay'),
+        ('CASH', 'Tiền mặt'),
+    )
+
     PAYMENT_METHOD_CHOICES = (
         ('cash', 'Tiền mặt'),
         ('bank_transfer', 'Chuyển khoản'),
@@ -1009,21 +1042,27 @@ class Payment(models.Model):
     )
     
     STATUS_CHOICES = (
-        ('pending', 'Chờ thanh toán'),
-        ('paid', 'Đã thanh toán'),
-        ('failed', 'Thất bại'),
-        ('refunded', 'Đã hoàn tiền'),
+        ('PENDING', 'Chờ thanh toán'),
+        ('SUCCESS', 'Đã thanh toán'),
+        ('FAILED', 'Thất bại'),
     )
-    
-    order = models.OneToOneField(Order, on_delete=models.CASCADE, related_name='payment')
-    transaction_code = models.CharField(max_length=100, unique=True)
+
+    order = models.OneToOneField(Order, on_delete=models.SET_NULL, related_name='payment', null=True, blank=True)
+    order_code = models.BigIntegerField(unique=True, null=True, blank=True)
+    user_id = models.CharField(max_length=100, null=True, blank=True)
+    transaction_code = models.CharField(max_length=100, unique=True, null=True, blank=True)
     amount = models.DecimalField(max_digits=10, decimal_places=2)
+    currency = models.CharField(max_length=10, default='VND')
+    method = models.CharField(max_length=20, choices=METHOD_CHOICES, default='QR')
     payment_method = models.CharField(max_length=30, choices=PAYMENT_METHOD_CHOICES)
     payment_type = models.CharField(max_length=20, null=True, blank=True)  # ✅ ADDED - 'full', 'partial', etc.
     transaction_id = models.CharField(max_length=100, null=True, blank=True)  # ✅ ADDED - Gateway transaction ID
     vietqr_code_url = models.CharField(max_length=500, null=True, blank=True)  # ✅ ADDED
     qr_content = models.TextField(null=True, blank=True)  # ✅ ADDED
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    payment_url = models.CharField(max_length=500, null=True, blank=True)
+    qr_code = models.TextField(null=True, blank=True)
+    description = models.TextField(null=True, blank=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING')
     payment_proof_url = models.CharField(max_length=500, null=True, blank=True)
     paid_at = models.DateTimeField(null=True, blank=True)
     notes = models.TextField(null=True, blank=True)
@@ -1042,6 +1081,31 @@ class Payment(models.Model):
 
     def __str__(self):
         return f"{self.transaction_code} - {self.amount:,.0f}đ"
+
+
+class PaymentLog(models.Model):
+    """Bảng: payment_logs - lưu log webhook để đối soát."""
+    LOG_TYPE_CHOICES = (
+        ('WEBHOOK', 'Webhook'),
+        ('MANUAL', 'Manual'),
+        ('SYSTEM', 'System'),
+    )
+
+    payment = models.ForeignKey(Payment, on_delete=models.CASCADE, related_name='logs', null=True, blank=True)
+    order_code = models.BigIntegerField(null=True, blank=True)
+    type = models.CharField(max_length=20, choices=LOG_TYPE_CHOICES, default='WEBHOOK')
+    raw_data = models.TextField()
+    status_code = models.CharField(max_length=20, null=True, blank=True)
+    ip_address = models.CharField(max_length=64, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'payment_logs'
+        verbose_name = 'Log thanh toán'
+        verbose_name_plural = 'Log thanh toán'
+
+    def __str__(self):
+        return f"{self.type} - {self.order_code or 'N/A'}"
 
 
 # ========================================
@@ -1338,7 +1402,116 @@ class ChatMessage(models.Model):
 
 
 # ========================================
-# 14. SIGNALS - Tự động tạo Group khi tạo Customer/Staff
+# 14. INSPECTION IMAGE REQUIREMENTS & MEDIA FILES
+# ========================================
+
+class InspectionImageRequirement(models.Model):
+    """
+    Bảng: inspection_image_requirements
+    Cấu hình danh sách ảnh cần chụp cho từng giai đoạn.
+    """
+    STAGE_CHOICES = (
+        ('RECEIVE', 'Nhận xe'),
+        ('RETURN', 'Trả xe'),
+    )
+
+    CATEGORY_CHOICES = (
+        ('VEHICLE', 'Ảnh xe'),
+        ('DOCUMENT', 'Ảnh giấy tờ'),
+        ('CHECKLIST', 'Ảnh checklist'),
+        ('RECEIPT', 'Ảnh biên nhận/biên lai'),
+    )
+
+    POSITION_CHOICES = (
+        ('FRONT', 'Phía trước'),
+        ('BACK', 'Phía sau'),
+        ('LEFT', 'Bên trái'),
+        ('RIGHT', 'Bên phải'),
+        ('INTERIOR', 'Nội thất'),
+        ('DASHBOARD', 'Táp-lô'),
+        ('OTHER', 'Khác'),
+    )
+
+    name = models.CharField(max_length=200)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    position = models.CharField(max_length=20, choices=POSITION_CHOICES)
+    stage = models.CharField(max_length=20, choices=STAGE_CHOICES)
+    is_required = models.BooleanField(default=True)
+    sort_order = models.IntegerField(default=0)
+    vehicle_type = models.ForeignKey(
+        VehicleType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='image_requirements',
+        help_text='Null = áp dụng cho tất cả loại xe'
+    )
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = 'inspection_image_requirements'
+        ordering = ['stage', 'sort_order', 'id']
+        indexes = [
+            models.Index(fields=['stage', 'is_active']),
+            models.Index(fields=['category']),
+        ]
+
+    def __str__(self):
+        return f"{self.stage} - {self.name}"
+
+
+class MediaFile(models.Model):
+    """
+    Bảng: media_files
+    Lưu metadata file ảnh đã upload theo đơn hàng.
+    """
+    STAGE_CHOICES = InspectionImageRequirement.STAGE_CHOICES
+    CATEGORY_CHOICES = InspectionImageRequirement.CATEGORY_CHOICES
+    POSITION_CHOICES = InspectionImageRequirement.POSITION_CHOICES
+
+    order = models.ForeignKey(Order, on_delete=models.CASCADE, related_name='media_files')
+    requirement = models.ForeignKey(
+        InspectionImageRequirement,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='media_files'
+    )
+    stage = models.CharField(max_length=20, choices=STAGE_CHOICES)
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    position = models.CharField(max_length=20, choices=POSITION_CHOICES)
+
+    file = models.FileField(upload_to='media_files/%Y/%m/%d/')
+    url = models.CharField(max_length=1000)
+    thumbnail_url = models.CharField(max_length=1000, null=True, blank=True)
+    file_type = models.CharField(max_length=100)
+    file_size = models.BigIntegerField()
+
+    created_by = models.ForeignKey(
+        Staff,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='uploaded_media_files'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = 'media_files'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['order', 'stage']),
+            models.Index(fields=['requirement']),
+        ]
+
+    def __str__(self):
+        return f"{self.order.order_code} - {self.stage}/{self.category}/{self.position}"
+
+
+# ========================================
+# 15. SIGNALS - Tự động tạo Group khi tạo Customer/Staff
 # ========================================
 
 @receiver(post_save, sender=Customer)
@@ -1363,13 +1536,16 @@ def add_staff_to_group(sender, instance, created, **kwargs):
 
 @receiver(post_save, sender=Payment)
 def update_order_payment_status(sender, instance, **kwargs):
-    """Tự động cập nhật payment_status trong Order khi Payment thay đổi"""
-    if instance.status == 'paid':
+    """Tự động cập nhật payment_status trong Order khi Payment thay đổi."""
+    if not instance.order:
+        return
+
+    if instance.status == 'SUCCESS':
         instance.order.payment_status = 'paid'
         instance.order.payment_method = instance.payment_method
         instance.order.payment_completed_at = instance.paid_at or timezone.now()
         instance.order.save(update_fields=['payment_status', 'payment_method', 'payment_completed_at'])
-    elif instance.status in ['pending', 'failed']:
+    elif instance.status in ['PENDING', 'FAILED']:
         instance.order.payment_status = 'unpaid'
         instance.order.payment_method = None
         instance.order.payment_completed_at = None

@@ -597,6 +597,8 @@ class VehicleReturnLogSerializer(serializers.ModelSerializer):
         
         return [{
             'id': cost.id,
+            'order_id': cost.order_id,
+            'return_log_id': cost.return_log_id,
             'cost_type': cost.cost_type,
             'cost_name': cost.cost_name,
             'description': cost.description,
@@ -618,6 +620,8 @@ class VehicleReturnAdditionalCostSerializer(serializers.ModelSerializer):
     
     UPDATED 10/03/2026: order & return_log là OPTIONAL khi dùng nested route
     """
+    order_id = serializers.IntegerField(source='order.id', read_only=True)
+    return_log_id = serializers.IntegerField(source='return_log.id', read_only=True)
     order_code = serializers.CharField(source='order.order_code', read_only=True)
     created_by_name = serializers.CharField(source='created_by.full_name', read_only=True, allow_null=True)
     
@@ -629,6 +633,8 @@ class VehicleReturnAdditionalCostSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             'order': {'required': False},
             'return_log': {'required': False}
+
+            
         }
 
 
@@ -830,33 +836,14 @@ class VehicleReceiptInitializeSerializer(serializers.Serializer):
 
 class VehicleReceiptVehicleInspectionSerializer(serializers.Serializer):
     """
-    ✅ UPDATED 18/03/2026 - API #2: Vehicle Inspection - Lưu 6 ảnh xe + 2 giấy tờ
+    ✅ UPDATED 14/04/2026 - API #2: Vehicle Inspection - Xác nhận bước ảnh xe
     POST /api/orders/{id}/vehicle-receipt/vehicle-inspection/
     PUT  /api/orders/{id}/vehicle-receipt/vehicle-inspection/
-    
-    Request: { 6 ảnh xe + 2 giấy tờ }
+
+    Ảnh xe và giấy tờ được upload riêng qua /api/v1/media/upload/.
+    API này chỉ dùng để xác nhận bước nghiệp vụ và chuyển trạng thái.
     """
-    # 6 ảnh xe
-    photo_front_url = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh phía trước xe')
-    photo_rear_url = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh phía sau xe')
-    photo_left_url = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh bên trái xe')
-    photo_right_url = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh bên phải xe')
-    photo_dashboard_url = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh táp-lô (đồng hồ)')
-    photo_interior_url = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh nội thất')
-    
-    # ===== 2 GIẤY TỜ (NEW) =====
-    vehicle_registration_url = serializers.URLField(
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-        help_text='Ảnh giấy đăng ký xe'
-    )
-    vehicle_insurance_url = serializers.URLField(
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-        help_text='Ảnh giấy bảo hiểm xe'
-    )
+    pass
 
 
 class VehicleReceiptConditionCheckSerializer(serializers.Serializer):
@@ -877,7 +864,7 @@ class VehicleReceiptConditionCheckSerializer(serializers.Serializer):
     7. Động cơ hoạt động bình thường ← RIÊNG NHẬN XE
     8. Xác nhận mức nhiên liệu ← RIÊNG NHẬN XE
     
-    Request: { 8 checkbox + 8 ảnh + notes }
+    Request: { 8 checkbox + notes }
     """
     # ✅✅ 8 CHECKBOX FIELDS (Boolean) - NHẬN XE
     exterior_ok = serializers.BooleanField(required=False, default=False, help_text='✓ Ngoại thất không trầy xước')
@@ -888,16 +875,6 @@ class VehicleReceiptConditionCheckSerializer(serializers.Serializer):
     interior_ok = serializers.BooleanField(required=False, default=False, help_text='✓ Nội thất sạch sẽ')
     engine_ok = serializers.BooleanField(required=False, default=False, help_text='✓ Động cơ hoạt động bình thường')
     fuel_ok = serializers.BooleanField(required=False, default=False, help_text='✓ Xác nhận mức nhiên liệu')
-    
-    # ✅✅ 8 ẢNH MINH CHỨNG (URL) - NHẬN XE
-    exterior_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng ngoại thất')
-    tires_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng lốp xe')
-    lights_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng đèn')
-    mirrors_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng gương')
-    windows_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng kính')
-    interior_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng nội thất')
-    engine_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng động cơ')
-    fuel_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng nhiên liệu')
     
     # ===== GHI CHÚ CHUNG (NEW) =====
     additional_notes = serializers.CharField(
@@ -930,7 +907,7 @@ class VehicleReturnConditionCheckSerializer(serializers.Serializer):
     7. Giấy tờ xe đầy đủ ← RIÊNG TRẢ XE
     8. Tem đăng kiểm đã dán ← RIÊNG TRẢ XE
     
-    Request: { 8 checkbox + 8 ảnh }
+    Request: { 8 checkbox }
     """
     # ✅✅ 8 CHECKBOX FIELDS (Boolean) - TRẢ XE
     exterior_ok = serializers.BooleanField(required=False, default=False, help_text='✓ Ngoại thất không trầy xước')
@@ -942,17 +919,6 @@ class VehicleReturnConditionCheckSerializer(serializers.Serializer):
     documents_complete_ok = serializers.BooleanField(required=False, default=False, help_text='✓ Giấy tờ xe đầy đủ')
     stamp_attached_ok = serializers.BooleanField(required=False, default=False, help_text='✓ Tem đăng kiểm đã dán')
     
-    # ✅✅ 8 ẢNH MINH CHỨNG (URL) - TRẢ XE
-    exterior_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng ngoại thất')
-    tires_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng lốp xe')
-    lights_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng đèn')
-    mirrors_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng gương')
-    windows_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng kính')
-    interior_check_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh minh chứng nội thất')
-    documents_complete_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh giấy tờ xe đầy đủ')
-    stamp_attached_photo = serializers.URLField(required=False, allow_blank=True, allow_null=True, help_text='Ảnh tem đăng kiểm đã dán')
-
-
 # ========================================
 # 8A.5. VEHICLE RETURN UPDATE INSPECTION EXPIRY SERIALIZER (TRẢ XE) - NEW 18/03/2026
 # ========================================
@@ -1005,22 +971,11 @@ class VehicleReceiptFinalizeSerializer(serializers.Serializer):
     POST /api/orders/{id}/vehicle-receipt-finalize/
     
     CREATED: 16/03/2026 - Tách riêng serializer cho NHẬN XE (khác với TRẢ XE)
-    UPDATED: 18/03/2026 - Chỉ cần staff_signature (customer_signature đã có ở API 1, giấy tờ đã có ở API 2)
+    UPDATED: 10/04/2026 - Không cần payload, endpoint chỉ dùng để chốt biên bản nhận xe.
     
-    Request: { staff_signature }
+    Request: {}
     """
-    # ===== CHỮ KÝ NHÂN VIÊN (BẮT BUỘC) =====
-    staff_signature = serializers.CharField(
-        required=True,  # BẮT BUỘC
-        allow_blank=False,
-        help_text='Chữ ký nhân viên (base64 hoặc data:image/png;base64,...)'
-    )
-    
-    # ❌ BỎ TẤT CẢ FIELDS KHÁC:
-    # - vehicle_registration_url (đã có ở API 2)
-    # - vehicle_insurance_url (đã có ở API 2)
-    # - customer_signature (đã có ở API 1)
-    # - additional_notes (có thể thêm vào API 3 nếu cần)
+    pass
 
 
 # ========================================
@@ -1035,14 +990,10 @@ class VehicleReturnFinalizeSerializer(serializers.Serializer):
     UPDATED: 10/03/2026 - Thêm đầy đủ 11 fields giấy tờ kiểm định
     RENAMED: 16/03/2026 - Đổi từ VehicleReceiptFinalizeSerializer thành VehicleReturnFinalizeSerializer
     
-    Request: { 11 giấy tờ + ghi chú + chữ ký }
+    Request: { thông tin giấy tờ + ghi chú + chữ ký }
+    Ảnh giấy tờ/biên lai được upload riêng qua /api/v1/media/upload/.
     """
     # === NHÓM A: GIẤY ĐĂNG KÝ XE ===
-    vehicle_registration_url = serializers.URLField(
-        required=True,  # BẮT BUỘC
-        allow_blank=False,
-        help_text='Ảnh giấy đăng ký xe (BẮT BUỘC)'
-    )
     registration_number = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -1052,11 +1003,6 @@ class VehicleReturnFinalizeSerializer(serializers.Serializer):
     )
     
     # === NHÓM B: TEM ĐĂNG KIỂM ===
-    stamp_url = serializers.URLField(
-        required=True,  # BẮT BUỘC
-        allow_blank=False,
-        help_text='Ảnh tem đăng kiểm đã dán (BẮT BUỘC)'
-    )
     stamp_number = serializers.CharField(
         required=True,  # BẮT BUỘC
         allow_blank=False,
@@ -1073,16 +1019,10 @@ class VehicleReturnFinalizeSerializer(serializers.Serializer):
         required=False,
         allow_blank=True,
         allow_null=True,
-        help_text='Array URLs các giấy tờ khác (JSON string format: ["url1.jpg", "url2.pdf"])'
+        help_text='Metadata bổ sung cho giấy tờ khác (JSON string)'
     )
-    
+
     # === NHÓM D: BIÊN LAI ===
-    receipt_url = serializers.URLField(
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-        help_text='Ảnh biên lai'
-    )
     receipt_number = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -1092,11 +1032,6 @@ class VehicleReturnFinalizeSerializer(serializers.Serializer):
     )
     
     # === NHÓM E: GIẤY CHỨNG NHẬT KIỂM ĐỊNH ===
-    inspection_certificate_url = serializers.URLField(
-        required=True,  # BẮT BUỘC
-        allow_blank=False,
-        help_text='Ảnh giấy chứng nhận đăng kiểm (BẮT BUỘC)'
-    )
     certificate_number = serializers.CharField(
         required=True,  # BẮT BUỘC
         allow_blank=False,
@@ -1233,3 +1168,42 @@ class DriverLocationResponseSerializer(serializers.Serializer):
     station_location = serializers.DictField(required=False, allow_null=True)
     tracking_info = serializers.DictField(required=False, allow_null=True)
     message = serializers.CharField(required=False, allow_null=True)
+
+
+class InspectionImageRequirementSerializer(serializers.ModelSerializer):
+    vehicle_type_code = serializers.CharField(source='vehicle_type.type_code', read_only=True)
+
+    class Meta:
+        model = InspectionImageRequirement
+        fields = [
+            'id',
+            'name',
+            'category',
+            'position',
+            'stage',
+            'is_required',
+            'sort_order',
+            'vehicle_type',
+            'vehicle_type_code',
+            'is_active',
+        ]
+
+
+class MediaFileSerializer(serializers.ModelSerializer):
+    requirement_id = serializers.IntegerField(source='requirement.id', read_only=True)
+
+    class Meta:
+        model = MediaFile
+        fields = [
+            'id',
+            'order',
+            'requirement_id',
+            'stage',
+            'category',
+            'position',
+            'url',
+            'thumbnail_url',
+            'file_type',
+            'file_size',
+            'created_at',
+        ]

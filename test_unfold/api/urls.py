@@ -37,11 +37,22 @@ urlpatterns = [
     # ========================================
     path('auth/logout/', user_logout, name='logout'),
     path('auth/me/', current_user, name='current-user'),
-    
+
+    # ========================================
+    # PAYMENTS (PayOS flow)
+    # ========================================
+    path('create-payment/', create_payment, name='create-payment'),
+    path('check-payment-status/<int:order_code>/', check_payment_status, name='check-payment-status'),
+    path('payment-order/<int:order_code>/', get_order_by_order_code, name='payment-order-by-order-code'),
+    path('webhook/payos/', webhook_payos, name='webhook-payos'),
+
     # ========================================
     # ✅✅ NEW - UPLOAD IMAGE (08/03/2026)
     # ========================================
     path('upload-image/', upload_image, name='upload-image'),
+    path('v1/media/upload/', media_upload_v1, name='media-upload-v1'),
+    path('v1/media/', media_list_v1, name='media-list-v1'),
+    path('v1/image-requirements/', image_requirements_v1, name='image-requirements-v1'),
     
     # ========================================
     # ✅✅ STAFF ASSIGNMENT AJAX ENDPOINTS (DJANGO ADMIN ONLY - ĐÃ XÓA KHỎI API)
