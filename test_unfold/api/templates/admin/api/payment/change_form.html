@@ -1,0 +1,22 @@
+{% extends "admin/change_form.html" %}
+
+{% block content %}
+
+{% include "admin/api/payment/partials/_form_styles.html" %}
+
+<div class="payment-detail-page">
+  {% include "admin/api/payment/partials/_form_hero.html" %}
+  {% include "admin/api/payment/partials/_form_info_cards.html" %}
+
+  <div class="payment-edit-shell">
+    <div class="payment-edit-header">
+      <div class="payment-edit-title">Chỉnh sửa thanh toán</div>
+      <div class="payment-edit-subtitle">Cập nhật trạng thái, phương thức và ghi chú thanh toán.</div>
+    </div>
+    <div class="payment-edit-body">
+      {{ block.super }}
+    </div>
+  </div>
+</div>
+
+{% endblock %}

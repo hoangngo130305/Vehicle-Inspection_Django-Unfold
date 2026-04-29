@@ -1,0 +1,22 @@
+{% extends "admin/change_form.html" %}
+
+{% block content %}
+
+{% include "admin/api/vehicle_return_additional_cost/partials/_form_styles.html" %}
+
+<div class="cost-detail-page">
+  {% include "admin/api/vehicle_return_additional_cost/partials/_form_hero.html" %}
+  {% include "admin/api/vehicle_return_additional_cost/partials/_form_info_cards.html" %}
+
+  <div class="cost-edit-shell">
+    <div class="cost-edit-header">
+      <div class="cost-edit-title">Chỉnh sửa phí phát sinh</div>
+      <div class="cost-edit-subtitle">Quản lý thông tin chi phí, trạng thái phê duyệt và thanh toán.</div>
+    </div>
+    <div class="cost-edit-body">
+      {{ block.super }}
+    </div>
+  </div>
+</div>
+
+{% endblock %}

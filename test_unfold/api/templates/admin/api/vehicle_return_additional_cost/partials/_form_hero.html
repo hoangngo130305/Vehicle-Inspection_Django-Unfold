@@ -1,0 +1,21 @@
+<div class="cost-hero">
+  <div class="cost-hero-top">
+    <div class="cost-hero-badge">{{ original.order.order_code }}</div>
+    <div class="cost-hero-status {% if original.payment_status == 'paid' %}is-success{% elif original.payment_status == 'pending' or original.payment_status == 'processing' %}is-pending{% else %}is-failed{% endif %}">
+      {{ original.payment_status }}
+    </div>
+  </div>
+
+  <h1 class="cost-hero-title">{{ original.cost_name }}</h1>
+  <p class="cost-hero-subtitle">{{ original.amount|floatformat:0 }}đ • {{ original.cost_type }}</p>
+
+  <div class="cost-hero-meta">
+    <span>Phê duyệt: {% if original.is_approved %}Đã duyệt{% else %}Chưa duyệt{% endif %}</span>
+    <span>Thanh toán lúc: {% if original.paid_at %}{{ original.paid_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</span>
+  </div>
+
+  <div class="cost-hero-actions">
+    <a href="../" class="cost-hero-btn">Quay lại danh sách</a>
+    <a href="history/" class="cost-hero-btn">Lịch sử thay đổi</a>
+  </div>
+</div>

@@ -23,6 +23,7 @@ decorator==5.2.1
 deprecation==2.1.0
 distro==1.9.0
 Django==6.0.3
+dj-wallet==0.1.0
 django-cors-headers==4.7.0
 django-filter==25.2
 django-jazzmin==3.0.3

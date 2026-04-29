@@ -1,0 +1,37 @@
+<div class="finance-grid">
+  <div class="finance-card">
+    <div class="finance-card-top">
+      <div class="finance-icon green">$</div>
+      <div class="finance-trend up">Tổng</div>
+    </div>
+    <p class="finance-value">{{ total_revenue|floatformat:0 }}</p>
+    <p class="finance-label">Tổng doanh thu</p>
+  </div>
+
+  <div class="finance-card">
+    <div class="finance-card-top">
+      <div class="finance-icon blue">↗</div>
+      <div class="finance-trend up">QR</div>
+    </div>
+    <p class="finance-value">{{ vietqr_total|floatformat:0 }}</p>
+    <p class="finance-label">Thanh toán VietQR / PayOS</p>
+  </div>
+
+  <div class="finance-card">
+    <div class="finance-card-top">
+      <div class="finance-icon purple">✓</div>
+      <div class="finance-trend up">OK</div>
+    </div>
+    <p class="finance-value">{{ completed_count }}</p>
+    <p class="finance-label">Đã hoàn thành</p>
+  </div>
+
+  <div class="finance-card">
+    <div class="finance-card-top">
+      <div class="finance-icon orange">◔</div>
+      <div class="finance-trend down">Chờ</div>
+    </div>
+    <p class="finance-value">{{ pending_payments_count }}</p>
+    <p class="finance-label">Chờ duyệt</p>
+  </div>
+</div>

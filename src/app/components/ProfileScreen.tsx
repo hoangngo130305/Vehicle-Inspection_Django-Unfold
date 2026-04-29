@@ -1,17 +1,11 @@
-import { User, Car, Bell, Lock, HelpCircle, LogOut, ChevronRight, Settings, CreditCard, History, Calendar } from 'lucide-react';
-import { useState } from 'react';
+import { User, Car, Bell, Lock, HelpCircle, LogOut, ChevronRight, Settings, CreditCard, History, Calendar, Wallet } from 'lucide-react';
 import { useNavigate } from 'react-router';
 import { toast } from 'sonner';
-import { useAuth } from '@/app/contexts/AuthContext';
-import BookingHistoryScreen from './BookingHistoryScreen';
-import PaymentMethodsScreen from './PaymentMethodsScreen';
-
-type ScreenType = 'profile' | 'history' | 'payments' | 'notifications' | 'settings' | 'security' | 'help';
+import { useAuth } from '../contexts/AuthContext';
 
 export default function ProfileScreen() {
   const navigate = useNavigate();
   const { user, logout } = useAuth();
-  const [currentScreen, setCurrentScreen] = useState<ScreenType>('profile');
 
   const handleLogout = () => {
     if (confirm('Bạn có chắc muốn đăng xuất?')) {
@@ -29,16 +23,22 @@ export default function ProfileScreen() {
       onClick: () => navigate('/personal-info'),
     },
     {
+      icon: Wallet,
+      label: 'Ví của tôi',
+      description: 'Nạp tiền và quản lý ví',
+      onClick: () => navigate('/wallet'),
+    },
+    {
       icon: History,
       label: 'Lịch sử đặt lịch',
       description: 'Xem lịch sử các lần đặt lịch',
-      onClick: () => setCurrentScreen('history'),
+      onClick: () => navigate('/orders'),
     },
     {
       icon: CreditCard,
       label: 'Phương thức thanh toán',
       description: 'Quản lý thẻ và thanh toán',
-      onClick: () => setCurrentScreen('payments'),
+      onClick: () => navigate('/payments'),
     },
     {
       icon: Bell,
@@ -65,14 +65,6 @@ export default function ProfileScreen() {
       onClick: () => navigate('/help'),
     },
   ];
-
-  if (currentScreen === 'history') {
-    return <BookingHistoryScreen onBack={() => setCurrentScreen('profile')} />;
-  }
-
-  if (currentScreen === 'payments') {
-    return <PaymentMethodsScreen onBack={() => setCurrentScreen('profile')} />;
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">

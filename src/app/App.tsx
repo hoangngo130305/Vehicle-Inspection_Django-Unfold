@@ -1,5 +1,5 @@
 import { Toaster } from 'sonner';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router';
+import { BrowserRouter, Routes, Route, Navigate, useNavigate } from 'react-router';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { StationsProvider } from './contexts/StationsContext';
 import { useState } from 'react';
@@ -18,12 +18,15 @@ import VehicleManagementScreen from './components/VehicleManagementScreen';
 import NewBookingScreen from './components/NewBookingScreen';
 import MapScreen from './components/MapScreen';
 import ProfileScreen from './components/ProfileScreen';
+import WalletScreen from './components/WalletScreen';
+import WalletTopupScreen from './components/WalletTopupScreen';
 import TrackingScreen from './components/TrackingScreen';
 import OrderHistoryScreen from './components/OrderHistoryScreen';
 import VehicleReceiptScreen from './components/VehicleReceiptScreen';
 import RatingScreen from './components/RatingScreen';
 import InvoiceScreen from './components/InvoiceScreen';
 import PersonalInfoScreen from './components/PersonalInfoScreen';
+import PaymentMethodsScreen from './components/PaymentMethodsScreen';
 import NotificationsScreen from './components/NotificationsScreen';
 import SettingsScreen from './components/SettingsScreen';
 import SecurityScreen from './components/SecurityScreen';
@@ -60,6 +63,7 @@ import AdminVehicleTypesScreen from './components/admin/AdminVehicleTypesScreen'
 
 function AppRoutes() {
   const { isAuthenticated, user } = useAuth();
+  const navigate = useNavigate();
 
   if (isAuthenticated && user) {
     return (
@@ -79,6 +83,9 @@ function AppRoutes() {
               <Route path="booking" element={<NewBookingScreen />} />
               <Route path="map" element={<MapScreen />} />
               <Route path="profile" element={<ProfileScreen />} />
+              <Route path="wallet" element={<WalletScreen />} />
+              <Route path="wallet/topup" element={<WalletTopupScreen />} />
+              <Route path="payments" element={<PaymentMethodsScreen onBack={() => navigate(-1)} />} />
               <Route path="orders" element={<OrderHistoryScreen />} />
               <Route path="tracking/:orderId" element={<TrackingScreen />} />
               <Route path="vehicle-receipt/:orderId" element={<VehicleReceiptScreen />} />
@@ -141,6 +148,8 @@ function AppRoutes() {
 
   return (
     <Routes>
+      <Route path="/thanhtoan" element={<WalletScreen />} />
+      <Route path="/thanhtoan/nap" element={<WalletTopupScreen />} />
       <Route path="*" element={<AuthScreen onLoginSuccess={() => {}} />} />
     </Routes>
   );

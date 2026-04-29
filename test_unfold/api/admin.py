@@ -1,7 +1,16 @@
+from datetime import date, timedelta
+from decimal import Decimal
+import csv
+from urllib.parse import urlencode
+
 from django.contrib import admin
 from django.contrib.auth.models import User
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.core.paginator import Paginator
 from django.db import models
+from django.db.models import Sum, Count, Q
+from django.http import HttpResponse
+from django.utils import timezone
 from .models import *
 
 # ========================================
@@ -1412,7 +1421,10 @@ class OrderAdmin(admin.ModelAdmin):
         'assigned_staff__full_name',
         'assigned_staff__employee_code'
     ]
-    readonly_fields = ['order_code', 'created_at', 'updated_at', 'confirmed_at', 'cancelled_at', 'contract_document_created_at', 'payment_completed_at']
+    readonly_fields = [
+        'order_code', 'created_at', 'updated_at', 'confirmed_at', 'cancelled_at',
+        'contract_document_created_at', 'handover_document_created_at', 'payment_completed_at'
+    ]
     inlines = [VehicleReceiptLogInline, OrderStatusHistoryInline, OrderChecklistInline, OrderServiceInline]
     
     # ✅ THÊM: Actions để bulk assign staff
@@ -1440,6 +1452,10 @@ class OrderAdmin(admin.ModelAdmin):
         ('� Hợp đồng (26/03/2026)', {
             'fields': ('contract_document_pdf', 'contract_document', 'contract_document_created_at'),
             'description': 'File hợp đồng ủy quyền (.pdf) được tạo tự động từ API; giữ lại DOCX ở trường contract_document'
+        }),
+        ('📄 Hợp đồng trả xe', {
+            'fields': ('handover_document_pdf', 'handover_document', 'handover_document_created_at'),
+            'description': 'File biên bản bàn giao trả xe (.pdf/.docx) được tạo từ API complete-vehicle-returned hoặc generate-handover-docx'
         }),
         ('�🚗 Driver Location Tracking (13/03/2026)', {
             'fields': (
@@ -1822,6 +1838,7 @@ class VehicleReturnLogAdmin(admin.ModelAdmin):
 @admin.register(VehicleReturnAdditionalCost)
 class VehicleReturnAdditionalCostAdmin(admin.ModelAdmin):
     """Admin cho Chi phí phát sinh khi TRẢ xe"""
+    change_form_template = 'admin/api/vehicle_return_additional_cost/change_form.html'
     list_display = ['id', 'get_order_code', 'cost_type', 'cost_name', 'amount', 'is_approved', 'created_by', 'created_at']
     list_filter = ['cost_type', 'is_approved', 'is_required', 'created_at']
     search_fields = ['order__order_code', 'cost_name', 'description', 'created_by__full_name']
@@ -2032,10 +2049,336 @@ class OrderChecklistAdmin(admin.ModelAdmin):
 
 @admin.register(Payment)
 class PaymentAdmin(admin.ModelAdmin):
+    change_list_template = 'admin/api/payment/change_list.html'
+    change_form_template = 'admin/api/payment/change_form.html'
     list_display = ['id', 'transaction_code', 'order', 'amount', 'payment_method', 'status', 'paid_at']
     list_filter = ['status', 'payment_method', 'created_at']
     search_fields = ['transaction_code', 'order__order_code']
     readonly_fields = ['transaction_code', 'created_at', 'updated_at']
+
+    STATUS_FILTER_CHOICES = [
+        ('all', 'Tất cả trạng thái'),
+        ('success', 'Đã thanh toán'),
+        ('pending', 'Chờ thanh toán'),
+        ('failed', 'Thất bại'),
+        ('waived', 'Miễn phí'),
+    ]
+    PERIOD_FILTER_CHOICES = [
+        ('all', 'Toàn bộ thời gian'),
+        ('day', 'Hôm nay'),
+        ('week', 'Tuần này'),
+        ('month', 'Tháng này'),
+        ('quarter', 'Quý này'),
+        ('year', 'Năm nay'),
+    ]
+    PAGE_SIZE_CHOICES = [10, 20, 50, 100]
+
+    def _normalize_payment_status(self, raw_status):
+        status = (raw_status or '').upper()
+        if raw_status in ['paid', 'SUCCESS'] or status == 'SUCCESS':
+            return 'success', 'Đã thanh toán'
+        if raw_status in ['pending', 'PENDING'] or status == 'PENDING':
+            return 'pending', 'Chờ thanh toán'
+        return 'failed', 'Thất bại'
+
+    def _normalize_cost_status(self, raw_status):
+        if raw_status in ('SUCCESS', 'paid'):
+            return 'success', 'Đã thanh toán'
+        if raw_status in ('PENDING', 'pending', 'processing'):
+            return 'pending', 'Chờ thanh toán'
+        if raw_status == 'waived':
+            return 'neutral', 'Miễn phí'
+        if raw_status in ('FAILED', 'failed'):
+            return 'failed', 'Thất bại'
+        if raw_status in ('CANCELLED', 'cancelled'):
+            return 'failed', 'Đã hủy'
+        return 'failed', raw_status or 'Không xác định'
+
+    def _decorate_payment_rows(self, payments):
+        for payment in payments:
+            payment.status_variant, payment.status_label = self._normalize_payment_status(payment.status)
+        return payments
+
+    def _decorate_cost_rows(self, costs):
+        for cost in costs:
+            cost.status_variant, cost.status_label = self._normalize_cost_status(cost.payment_status)
+        return costs
+
+    def _get_selected_period(self, request):
+        selected_period = request.GET.get('period', 'all')
+        valid_periods = {value for value, _ in self.PERIOD_FILTER_CHOICES}
+        return selected_period if selected_period in valid_periods else 'all'
+
+    def _get_selected_status(self, request):
+        selected_status = request.GET.get('status', 'all')
+        valid_statuses = {value for value, _ in self.STATUS_FILTER_CHOICES}
+        return selected_status if selected_status in valid_statuses else 'all'
+
+    def _get_selected_page_size(self, request):
+        try:
+            page_size = int(request.GET.get('per_page', self.PAGE_SIZE_CHOICES[0]))
+        except (TypeError, ValueError):
+            page_size = self.PAGE_SIZE_CHOICES[0]
+        return page_size if page_size in self.PAGE_SIZE_CHOICES else self.PAGE_SIZE_CHOICES[0]
+
+    def _get_period_bounds(self, period):
+        today = timezone.localdate()
+        if period == 'day':
+            start_date = today
+            end_date = today + timedelta(days=1)
+        elif period == 'week':
+            start_date = today - timedelta(days=today.weekday())
+            end_date = start_date + timedelta(days=7)
+        elif period == 'month':
+            start_date = today.replace(day=1)
+            if start_date.month == 12:
+                end_date = date(start_date.year + 1, 1, 1)
+            else:
+                end_date = date(start_date.year, start_date.month + 1, 1)
+        elif period == 'quarter':
+            quarter_month = ((today.month - 1) // 3) * 3 + 1
+            start_date = date(today.year, quarter_month, 1)
+            if quarter_month == 10:
+                end_date = date(today.year + 1, 1, 1)
+            else:
+                end_date = date(today.year, quarter_month + 3, 1)
+        elif period == 'year':
+            start_date = date(today.year, 1, 1)
+            end_date = date(today.year + 1, 1, 1)
+        else:
+            return None, None
+        return start_date, end_date
+
+    def _apply_period_filter(self, queryset, field_name, period):
+        start_date, end_date = self._get_period_bounds(period)
+        if not start_date or not end_date:
+            return queryset
+        return queryset.filter(
+            **{
+                f'{field_name}__date__gte': start_date,
+                f'{field_name}__date__lt': end_date,
+            }
+        )
+
+    def _apply_payment_status_filter(self, queryset, status):
+        if status == 'success':
+            return queryset.filter(status__in=['SUCCESS', 'paid'])
+        if status == 'pending':
+            return queryset.filter(status__in=['PENDING', 'pending'])
+        if status == 'failed':
+            return queryset.filter(status__in=['FAILED', 'failed'])
+        if status == 'waived':
+            return queryset.none()
+        return queryset
+
+    def _apply_cost_status_filter(self, queryset, status):
+        if status == 'success':
+            return queryset.filter(payment_status__in=['SUCCESS', 'paid'])
+        if status == 'pending':
+            return queryset.filter(payment_status__in=['PENDING', 'pending', 'processing'])
+        if status == 'failed':
+            return queryset.filter(payment_status__in=['FAILED', 'failed', 'CANCELLED', 'cancelled'])
+        if status == 'waived':
+            return queryset.filter(payment_status='waived')
+        return queryset
+
+    def _build_query_string(self, request, updates=None, remove=None):
+        params = request.GET.copy()
+        for key in remove or []:
+            params.pop(key, None)
+        for key, value in (updates or {}).items():
+            if value in [None, '', 'all']:
+                params.pop(key, None)
+            else:
+                params[key] = value
+        encoded = params.urlencode()
+        return f'?{encoded}' if encoded else '?'
+
+    def _build_pagination_context(self, request, page_obj, page_param, active_tab):
+        page_numbers = page_obj.paginator.get_elided_page_range(page_obj.number, on_each_side=1, on_ends=1)
+        links = []
+        for page_number in page_numbers:
+            if page_number == '…':
+                links.append({'ellipsis': True})
+                continue
+            links.append({
+                'number': page_number,
+                'is_current': page_number == page_obj.number,
+                'url': self._build_query_string(
+                    request,
+                    updates={page_param: page_number, 'active_tab': active_tab},
+                )
+            })
+        previous_url = None
+        next_url = None
+        if page_obj.has_previous():
+            previous_url = self._build_query_string(
+                request,
+                updates={page_param: page_obj.previous_page_number(), 'active_tab': active_tab},
+            )
+        if page_obj.has_next():
+            next_url = self._build_query_string(
+                request,
+                updates={page_param: page_obj.next_page_number(), 'active_tab': active_tab},
+            )
+        return {
+            'page_obj': page_obj,
+            'links': links,
+            'previous_url': previous_url,
+            'next_url': next_url,
+            'summary': f"Trang {page_obj.number}/{page_obj.paginator.num_pages} · {page_obj.paginator.count} bản ghi",
+        }
+
+    def _paginate_queryset(self, request, queryset, page_param, active_tab, page_size):
+        paginator = Paginator(queryset, page_size)
+        page_obj = paginator.get_page(request.GET.get(page_param, 1))
+        return page_obj, self._build_pagination_context(request, page_obj, page_param, active_tab)
+
+    def changelist_view(self, request, extra_context=None):
+        active_tab = request.GET.get('active_tab', 'overview')
+        selected_status = self._get_selected_status(request)
+        selected_period = self._get_selected_period(request)
+        page_size = self._get_selected_page_size(request)
+
+        payos_filter = Q(payment_method__in=['vietqr', 'vnpay'])
+        wallet_topup_filter = Q(payment_type='wallet_topup')
+        payment_page_params = ['payments_page', 'payos_page', 'wallet_topup_page', 'additional_costs_page']
+
+        all_order_payments = Payment.objects.select_related('order').exclude(payment_type='wallet_topup').order_by('-created_at')
+        filtered_order_payments = self._apply_period_filter(all_order_payments, 'created_at', selected_period)
+        filtered_order_payments = self._apply_payment_status_filter(filtered_order_payments, selected_status)
+
+        successful_payments = filtered_order_payments.filter(status__in=['SUCCESS', 'paid'])
+        scope_summary = successful_payments.aggregate(
+            total_revenue=Sum('amount'),
+            completed_count=Count('id'),
+        )
+
+        pending_payments_count = filtered_order_payments.filter(status__in=['PENDING', 'pending']).count()
+
+        payos_payments_queryset = self._apply_period_filter(
+            Payment.objects.select_related('order').filter(payos_filter).exclude(payment_type='wallet_topup').order_by('-created_at'),
+            'created_at',
+            selected_period,
+        )
+        payos_payments_queryset = self._apply_payment_status_filter(payos_payments_queryset, selected_status)
+
+        wallet_topup_payments_queryset = self._apply_period_filter(
+            Payment.objects.select_related('order').filter(wallet_topup_filter).order_by('-created_at'),
+            'created_at',
+            selected_period,
+        )
+        wallet_topup_payments_queryset = self._apply_payment_status_filter(wallet_topup_payments_queryset, selected_status)
+
+        additional_costs_queryset = self._apply_period_filter(
+            VehicleReturnAdditionalCost.objects.select_related('order', 'return_log').all().order_by('-created_at'),
+            'created_at',
+            selected_period,
+        )
+        additional_costs_queryset = self._apply_cost_status_filter(additional_costs_queryset, selected_status)
+
+        if request.GET.get('export') == 'csv':
+            return self._export_payments_csv(filtered_order_payments)
+
+        total_revenue = scope_summary['total_revenue'] or Decimal('0')
+        completed_count = scope_summary['completed_count'] or 0
+
+        vietqr_total = successful_payments.filter(payment_method='vietqr').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        cash_total = successful_payments.filter(payment_method='cash').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+        bank_transfer_total = successful_payments.filter(payment_method='bank_transfer').aggregate(total=Sum('amount'))['total'] or Decimal('0')
+
+        scope_revenue = total_revenue
+        scope_completed_count = completed_count
+        average_order_value = (scope_revenue / scope_completed_count) if scope_completed_count else Decimal('0')
+
+        payos_pending_count = payos_payments_queryset.filter(status__in=['PENDING', 'pending']).count()
+        wallet_topup_pending_count = wallet_topup_payments_queryset.filter(status__in=['PENDING', 'pending']).count()
+
+        additional_costs_summary = additional_costs_queryset.aggregate(
+            total_amount=Sum('amount'),
+            pending_count=Count('id', filter=Q(payment_status__in=['PENDING', 'pending', 'processing'])),
+            paid_count=Count('id', filter=Q(payment_status__in=['SUCCESS', 'paid'])),
+        )
+
+        payments_page, payments_pagination = self._paginate_queryset(request, filtered_order_payments, 'payments_page', 'payments', page_size)
+        payos_page, payos_pagination = self._paginate_queryset(request, payos_payments_queryset, 'payos_page', 'payos', page_size)
+        wallet_topup_page, wallet_topup_pagination = self._paginate_queryset(request, wallet_topup_payments_queryset, 'wallet_topup_page', 'wallet-topup', page_size)
+        additional_costs_page, additional_costs_pagination = self._paginate_queryset(request, additional_costs_queryset, 'additional_costs_page', 'additional-costs', page_size)
+
+        self._decorate_payment_rows(payments_page.object_list)
+        self._decorate_payment_rows(payos_page.object_list)
+        self._decorate_payment_rows(wallet_topup_page.object_list)
+        self._decorate_cost_rows(additional_costs_page.object_list)
+
+        export_csv_url = self._build_query_string(
+            request,
+            updates={'export': 'csv'},
+            remove=payment_page_params,
+        )
+
+        period_labels = dict(self.PERIOD_FILTER_CHOICES)
+
+        extra_context = extra_context or {}
+        extra_context.update({
+            'dashboard_title': 'Quản lý tài chính',
+            'dashboard_subtitle': 'Theo dõi doanh thu, thanh toán và hóa đơn',
+            'active_tab': active_tab,
+            'selected_status': selected_status,
+            'selected_period': selected_period,
+            'selected_page_size': page_size,
+            'status_filter_choices': self.STATUS_FILTER_CHOICES,
+            'period_filter_choices': self.PERIOD_FILTER_CHOICES,
+            'page_size_choices': self.PAGE_SIZE_CHOICES,
+            'status_definition_items': [
+                {'variant': 'success', 'label': 'Đã thanh toán', 'description': 'Gộp SUCCESS và paid cũ'},
+                {'variant': 'pending', 'label': 'Chờ thanh toán', 'description': 'Gộp PENDING và pending cũ'},
+                {'variant': 'failed', 'label': 'Thất bại', 'description': 'Thanh toán lỗi hoặc bị hủy'},
+                {'variant': 'neutral', 'label': 'Miễn phí', 'description': 'Chỉ áp dụng cho phí phát sinh'},
+            ],
+            'total_revenue': total_revenue,
+            'vietqr_total': vietqr_total,
+            'completed_count': completed_count,
+            'pending_payments_count': pending_payments_count,
+            'cash_total': cash_total,
+            'bank_transfer_total': bank_transfer_total,
+            'scope_summary_title': f"Thống kê theo {period_labels.get(selected_period, 'bộ lọc hiện tại').lower()}",
+            'scope_completed_count': scope_completed_count,
+            'scope_revenue': scope_revenue,
+            'average_order_value': average_order_value,
+            'payments_page': payments_page,
+            'payments_pagination': payments_pagination,
+            'payos_page': payos_page,
+            'payos_pagination': payos_pagination,
+            'payos_pending_count': payos_pending_count,
+            'wallet_topup_page': wallet_topup_page,
+            'wallet_topup_pagination': wallet_topup_pagination,
+            'wallet_topup_pending_count': wallet_topup_pending_count,
+            'additional_costs_page': additional_costs_page,
+            'additional_costs_pagination': additional_costs_pagination,
+            'additional_costs_total': additional_costs_summary['total_amount'] or Decimal('0'),
+            'additional_costs_pending_count': additional_costs_summary['pending_count'] or 0,
+            'additional_costs_paid_count': additional_costs_summary['paid_count'] or 0,
+            'export_csv_url': export_csv_url,
+        })
+        return super().changelist_view(request, extra_context=extra_context)
+
+    def _export_payments_csv(self, queryset):
+        response = HttpResponse(content_type='text/csv; charset=utf-8')
+        response['Content-Disposition'] = 'attachment; filename="payment_report.csv"'
+        response.write('\ufeff')
+
+        writer = csv.writer(response)
+        writer.writerow(['Transaction Code', 'Order Code', 'Amount', 'Payment Method', 'Status', 'Paid At'])
+        for payment in queryset.select_related('order').order_by('-created_at'):
+            writer.writerow([
+                payment.transaction_code or '',
+                payment.order.order_code if payment.order else '',
+                payment.amount,
+                payment.get_payment_method_display() if payment.payment_method else '',
+                payment.status,
+                payment.paid_at.strftime('%Y-%m-%d %H:%M:%S') if payment.paid_at else '',
+            ])
+        return response
 
 
 # ========================================

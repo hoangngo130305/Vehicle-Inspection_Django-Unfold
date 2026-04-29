@@ -4,6 +4,7 @@ from django.utils import timezone
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 import uuid
+from dj_wallet.mixins import WalletMixin, ProductMixin
 
 
 
@@ -12,7 +13,7 @@ import uuid
 # 1. CUSTOMER PROFILE (Khách hàng)
 # ========================================
 
-class Customer(models.Model):
+class Customer(WalletMixin, models.Model):
     """
     Profile cho Khách hàng - OneToOne với auth_user
     Bảng: customers
@@ -387,7 +388,7 @@ class OrderStatus(models.Model):
 # 5B. ORDER
 # ========================================
 
-class Order(models.Model):
+class Order(ProductMixin, models.Model):
     """
     Bảng: orders
     
@@ -500,6 +501,21 @@ class Order(models.Model):
         help_text='File hợp đồng ủy quyền (PDF)'
     )
     contract_document_created_at = models.DateTimeField(null=True, blank=True, help_text='Thời gian tạo hợp đồng')
+
+    # ✅ NEW - HANDOVER CONTRACT DOCUMENT (Trả xe)
+    handover_document = models.FileField(
+        upload_to='contracts/',
+        null=True,
+        blank=True,
+        help_text='File biên bản bàn giao trả xe (DOCX)'
+    )
+    handover_document_pdf = models.FileField(
+        upload_to='contracts/',
+        null=True,
+        blank=True,
+        help_text='File biên bản bàn giao trả xe (PDF)'
+    )
+    handover_document_created_at = models.DateTimeField(null=True, blank=True, help_text='Thời gian tạo biên bản bàn giao trả xe')
     
     # ✅✅ NEW - PAYMENT INFO (26/03/2026)
     PAYMENT_METHOD_CHOICES = (
@@ -509,6 +525,7 @@ class Order(models.Model):
         ('momo', 'Momo'),
         ('zalopay', 'ZaloPay'),
         ('vnpay', 'VNPay'),
+        ('wallet', 'Ví điện tử'),
     )
     
     PAYMENT_STATUS_CHOICES = (
@@ -555,6 +572,21 @@ class Order(models.Model):
 
     def __str__(self):
         return f"{self.order_code} - {self.customer.full_name} ({self.status_name})"
+
+    # ProductMixin contract for wallet purchase flow
+    def get_amount_product(self, customer):
+        from decimal import Decimal
+        return (self.estimated_amount or Decimal('0')) + (self.additional_amount or Decimal('0'))
+
+    def can_buy(self, customer, quantity=1):
+        return self.payment_status == 'unpaid'
+
+    def get_meta_product(self):
+        return {
+            'order_code': self.order_code,
+            'type': 'vehicle_inspection',
+            'customer_id': self.customer_id,
+        }
 
 
 class OrderStatusHistory(models.Model):
@@ -904,13 +936,12 @@ class VehicleReturnAdditionalCost(models.Model):
     payment_status = models.CharField(
         max_length=20,
         choices=[
-            ('pending', 'Chờ thanh toán'),
-            ('processing', 'Đang xử lý'),
-            ('paid', 'Đã thanh toán'),
-            ('failed', 'Thất bại'),
-            ('cancelled', 'Đã hủy'),
+            ('PENDING', 'Chờ thanh toán'),
+            ('SUCCESS', 'Đã thanh toán'),
+            ('FAILED', 'Thất bại'),
+            ('CANCELLED', 'Đã hủy'),
         ],
-        default='pending',
+        default='PENDING',
         help_text='Trạng thái thanh toán'
     )
     

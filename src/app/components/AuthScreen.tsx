@@ -119,6 +119,9 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
         password: password,
       });
 
+      login('user', partnerCode || undefined);
+      onLoginSuccess();
+      navigate('/utilities', { replace: true });
       toast.success('Đăng nhập thành công!');
     } catch (err: any) {
       toast.error(err.message || 'Đăng nhập thất bại');
@@ -167,6 +170,9 @@ export default function AuthScreen({ onLoginSuccess }: AuthScreenProps) {
         password,
       });
 
+      login('staff', partnerCode || undefined);
+      onLoginSuccess();
+      navigate('/staff', { replace: true });
       toast.success('Đăng nhập thành công!');
     } catch (err: any) {
       toast.error(err.message || 'Đăng nhập thất bại');

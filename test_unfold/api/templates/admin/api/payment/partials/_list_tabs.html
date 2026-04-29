@@ -1,0 +1,195 @@
+<div class="finance-tabs">
+  <div class="finance-tab-list">
+    <button class="finance-tab-btn {% if active_tab == 'overview' %}active{% endif %}" type="button" data-tab="overview">Tổng quan</button>
+    <button class="finance-tab-btn {% if active_tab == 'payments' %}active{% endif %}" type="button" data-tab="payments">Thanh toán</button>
+    <button class="finance-tab-btn {% if active_tab == 'payos' %}active{% endif %}" type="button" data-tab="payos">Chuyển khoản PayOS{% if payos_pending_count %} ({{ payos_pending_count }}){% endif %}</button>
+    <button class="finance-tab-btn {% if active_tab == 'wallet-topup' %}active{% endif %}" type="button" data-tab="wallet-topup">Nạp ví{% if wallet_topup_pending_count %} ({{ wallet_topup_pending_count }}){% endif %}</button>
+    <button class="finance-tab-btn {% if active_tab == 'additional-costs' %}active{% endif %}" type="button" data-tab="additional-costs">Phí phát sinh{% if additional_costs_pending_count %} ({{ additional_costs_pending_count }}){% endif %}</button>
+  </div>
+
+  <div class="finance-tab-panel {% if active_tab == 'overview' %}active{% endif %}" data-panel="overview">
+    <div class="finance-summary-grid">
+      <div class="finance-summary-box blue">
+        <h3 class="finance-summary-title">Doanh thu theo phương thức</h3>
+        <div class="finance-stat-row"><span>VietQR / PayOS</span><strong>{{ vietqr_total|floatformat:0 }}</strong></div>
+        <div class="finance-stat-row"><span>Tiền mặt</span><strong>{{ cash_total|floatformat:0 }}</strong></div>
+        <div class="finance-stat-row"><span>Chuyển khoản</span><strong>{{ bank_transfer_total|floatformat:0 }}</strong></div>
+      </div>
+      <div class="finance-summary-box green">
+        <h3 class="finance-summary-title">{{ scope_summary_title }}</h3>
+        <div class="finance-stat-row"><span>Giao dịch hoàn thành</span><strong>{{ scope_completed_count }}</strong></div>
+        <div class="finance-stat-row"><span>Tổng doanh thu</span><strong>{{ scope_revenue|floatformat:0 }}</strong></div>
+        <div class="finance-stat-row"><span>Trung bình/đơn</span><strong>{{ average_order_value|floatformat:0 }}</strong></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="finance-tab-panel {% if active_tab == 'payments' %}active{% endif %}" data-panel="payments">
+    <div class="dk-table-wrapper dk-table-scroll">
+      <table class="dk-table">
+        <thead>
+          <tr>
+            <th>Mã giao dịch</th>
+            <th>Mã đơn</th>
+            <th>Số tiền</th>
+            <th>Phương thức</th>
+            <th>Trạng thái</th>
+            <th>Thanh toán lúc</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for payment in payments_page %}
+          <tr>
+            <td>
+              <a class="payment-link" href="{% url 'admin:api_payment_change' payment.id %}">
+                {{ payment.transaction_code|default:'-' }}
+              </a>
+            </td>
+            <td>{% if payment.order %}{{ payment.order.order_code }}{% else %}-{% endif %}</td>
+            <td>{{ payment.amount|floatformat:0 }}đ</td>
+            <td>{{ payment.get_payment_method_display|default:'-' }}</td>
+            <td>
+              <span class="finance-badge {{ payment.status_variant }}">
+                {{ payment.status_label }}
+              </span>
+            </td>
+            <td>{% if payment.paid_at %}{{ payment.paid_at|date:'d/m/Y H:i' }}{% else %}-{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="finance-empty">Chưa có dữ liệu thanh toán.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "admin/api/payment/partials/_list_pagination.html" with pagination=payments_pagination %}
+  </div>
+
+  <div class="finance-tab-panel {% if active_tab == 'payos' %}active{% endif %}" data-panel="payos">
+    <div class="dk-table-wrapper dk-table-scroll">
+      <table class="dk-table">
+        <thead>
+          <tr>
+            <th>Mã giao dịch</th>
+            <th>Mã đơn</th>
+            <th>Số tiền</th>
+            <th>Phương thức</th>
+            <th>Trạng thái</th>
+            <th>Thanh toán lúc</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for payment in payos_page %}
+          <tr>
+            <td>
+              <a class="payment-link" href="{% url 'admin:api_payment_change' payment.id %}">
+                {{ payment.transaction_code|default:'-' }}
+              </a>
+            </td>
+            <td>{% if payment.order %}{{ payment.order.order_code }}{% else %}-{% endif %}</td>
+            <td>{{ payment.amount|floatformat:0 }}đ</td>
+            <td>{{ payment.get_payment_method_display|default:'-' }}</td>
+            <td>
+              <span class="finance-badge {{ payment.status_variant }}">
+                {{ payment.status_label }}
+              </span>
+            </td>
+            <td>{% if payment.paid_at %}{{ payment.paid_at|date:'d/m/Y H:i' }}{% else %}-{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="finance-empty">Chưa có giao dịch chuyển khoản qua PayOS.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "admin/api/payment/partials/_list_pagination.html" with pagination=payos_pagination %}
+  </div>
+
+  <div class="finance-tab-panel {% if active_tab == 'wallet-topup' %}active{% endif %}" data-panel="wallet-topup">
+    <div class="dk-table-wrapper dk-table-scroll">
+      <table class="dk-table">
+        <thead>
+          <tr>
+            <th>Mã giao dịch</th>
+            <th>Khách hàng</th>
+            <th>Số tiền</th>
+            <th>Phương thức</th>
+            <th>Trạng thái</th>
+            <th>Thanh toán lúc</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for payment in wallet_topup_page %}
+          <tr>
+            <td>
+              <a class="payment-link" href="{% url 'admin:api_payment_change' payment.id %}">
+                {{ payment.transaction_code|default:'-' }}
+              </a>
+            </td>
+            <td>{{ payment.user_id|default:'-' }}</td>
+            <td>{{ payment.amount|floatformat:0 }}đ</td>
+            <td>{{ payment.get_payment_method_display|default:'-' }}</td>
+            <td>
+              <span class="finance-badge {{ payment.status_variant }}">
+                {{ payment.status_label }}
+              </span>
+            </td>
+            <td>{% if payment.paid_at %}{{ payment.paid_at|date:'d/m/Y H:i' }}{% else %}-{% endif %}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="finance-empty">Chưa có giao dịch nạp ví.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "admin/api/payment/partials/_list_pagination.html" with pagination=wallet_topup_pagination %}
+  </div>
+
+  <div class="finance-tab-panel {% if active_tab == 'additional-costs' %}active{% endif %}" data-panel="additional-costs">
+    <div class="finance-summary-grid" style="margin-bottom: 16px;">
+      <div class="finance-summary-box blue">
+        <h3 class="finance-summary-title">Tổng quan phí phát sinh</h3>
+        <div class="finance-stat-row"><span>Tổng giá trị</span><strong>{{ additional_costs_total|floatformat:0 }}</strong></div>
+        <div class="finance-stat-row"><span>Đã thanh toán</span><strong>{{ additional_costs_paid_count }}</strong></div>
+        <div class="finance-stat-row"><span>Chờ thanh toán</span><strong>{{ additional_costs_pending_count }}</strong></div>
+      </div>
+    </div>
+
+    <div class="dk-table-wrapper dk-table-scroll">
+      <table class="dk-table">
+        <thead>
+          <tr>
+            <th>Đơn hàng</th>
+            <th>Tên phí</th>
+            <th>Loại</th>
+            <th>Số tiền</th>
+            <th>Trạng thái</th>
+            <th>Ngày tạo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for cost in additional_costs_page %}
+          <tr>
+            <td>
+              <a class="payment-link" href="{% url 'admin:api_vehiclereturnadditionalcost_change' cost.id %}">
+                {{ cost.order.order_code }}
+              </a>
+            </td>
+            <td>{{ cost.cost_name }}</td>
+            <td>{{ cost.cost_type }}</td>
+            <td>{{ cost.amount|floatformat:0 }}đ</td>
+            <td>
+              <span class="finance-badge {{ cost.status_variant }}">
+                {{ cost.status_label }}
+              </span>
+            </td>
+            <td>{{ cost.created_at|date:'d/m/Y H:i' }}</td>
+          </tr>
+          {% empty %}
+          <tr><td colspan="6" class="finance-empty">Chưa có phí phát sinh.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "admin/api/payment/partials/_list_pagination.html" with pagination=additional_costs_pagination %}
+  </div>
+</div>

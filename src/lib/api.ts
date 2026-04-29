@@ -22,15 +22,21 @@ import {
 // ============================================================
 
 export const getToken = (): string | null => {
-  return localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN);
+  return (
+    localStorage.getItem(STORAGE_KEYS.ACCESS_TOKEN) ||
+    localStorage.getItem("token") ||
+    null
+  );
 };
 
 export const setToken = (token: string): void => {
   localStorage.setItem(STORAGE_KEYS.ACCESS_TOKEN, token);
+  localStorage.setItem("token", token);
 };
 
 export const clearToken = (): void => {
   localStorage.removeItem(STORAGE_KEYS.ACCESS_TOKEN);
+  localStorage.removeItem("token");
 };
 
 export const getRefreshToken = (): string | null => {
@@ -39,6 +45,26 @@ export const getRefreshToken = (): string | null => {
 
 export const setRefreshToken = (token: string): void => {
   localStorage.setItem(STORAGE_KEYS.REFRESH_TOKEN, token);
+};
+
+const isJwtToken = (token: string): boolean => token.split(".").length === 3;
+
+const getAuthScheme = (token: string): "Bearer" | "Token" => {
+  return isJwtToken(token) ? "Bearer" : "Token";
+};
+
+const extractAuthTokens = (
+  payload: any,
+): { accessToken?: string; refreshToken?: string } => {
+  const accessToken =
+    payload?.token ||
+    payload?.access ||
+    payload?.data?.token ||
+    payload?.data?.access;
+
+  const refreshToken = payload?.refresh || payload?.data?.refresh;
+
+  return { accessToken, refreshToken };
 };
 
 /**
@@ -150,8 +176,8 @@ export const getAuthHeaders = async (): Promise<HeadersInit> => {
   };
 
   if (token) {
-    // Check if token is expired
-    if (isTokenExpired(token)) {
+    // JWT token can expire and needs refresh; DRF Token does not include exp claim
+    if (isJwtToken(token) && isTokenExpired(token)) {
       const newToken = await refreshAccessToken();
       if (newToken) {
         token = newToken;
@@ -161,8 +187,7 @@ export const getAuthHeaders = async (): Promise<HeadersInit> => {
       }
     }
 
-    // ✅ FIXED: Django Simple JWT uses "Bearer" prefix, not "Token"
-    headers["Authorization"] = `Bearer ${token}`;
+    headers["Authorization"] = `${getAuthScheme(token)} ${token}`;
     console.log(
       "🔑 [AUTH HEADERS] Token added:",
       token.substring(0, 20) + "...",
@@ -589,9 +614,17 @@ export const authAPI = {
     const result = await response.json();
     console.log("✅ [CUSTOMER AUTH] Login successful:", result);
 
-    // Save token
-    if (result.token) {
-      setToken(result.token);
+    const { accessToken, refreshToken } = extractAuthTokens(result);
+
+    if (accessToken) {
+      setToken(accessToken);
+    }
+    if (refreshToken) {
+      setRefreshToken(refreshToken);
+    }
+
+    if (!accessToken) {
+      throw new Error("Đăng nhập thành công nhưng backend chưa trả token xác thực");
     }
 
     return result;
@@ -675,9 +708,17 @@ export const authAPI = {
     const result = await response.json();
     console.log("✅ [STAFF AUTH] Login successful:", result);
 
-    // Save token
-    if (result.token) {
-      setToken(result.token);
+    const { accessToken, refreshToken } = extractAuthTokens(result);
+
+    if (accessToken) {
+      setToken(accessToken);
+    }
+    if (refreshToken) {
+      setRefreshToken(refreshToken);
+    }
+
+    if (!accessToken) {
+      throw new Error("Đăng nhập thành công nhưng backend chưa trả token xác thực");
     }
 
     return result;
@@ -757,7 +798,7 @@ export const authAPI = {
       method: "GET",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Token ${token}`,
+        Authorization: `${getAuthScheme(token)} ${token}`,
       },
     });
 
@@ -786,7 +827,7 @@ export const authAPI = {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Token ${token}`,
+            Authorization: `${getAuthScheme(token)} ${token}`,
           },
         });
       }
@@ -1030,22 +1071,54 @@ export interface CreatePaymentRequest {
   user_id?: string;
   order_id?: number;
   method?: "QR" | "VNPAY" | "CASH";
+  payment_target?: "wallet_topup" | "order" | "additional_cost";
+  payment_method?: "cash" | "bank_transfer" | "vietqr" | "momo" | "zalopay" | "vnpay";
+  description?: string;
 }
 
 export interface CreatePaymentResponse {
   paymentId: number;
-  orderCode: number;
+  orderCode: number | string;
   qrCode: string;
   qrImageUrl: string;
   checkoutUrl: string;
   status: "PENDING" | "SUCCESS" | "FAILED" | "CANCELLED" | "REFUNDED";
+  paymentType?: string;
+  description?: string;
 }
 
 export interface CheckPaymentStatusResponse {
-  orderCode: number;
+  orderCode: number | string;
   status: "PENDING" | "SUCCESS" | "FAILED" | "CANCELLED" | "REFUNDED";
   amount: number;
   message: string;
+}
+
+export interface WalletBalanceResponse {
+  wallet_slug: string;
+  balance: string;
+  currency: string;
+  sync_source: string;
+}
+
+export interface WalletStatementTransaction {
+  payment_id: number;
+  order_code: number | string | null;
+  status: string;
+  amount: string;
+  payment_method: string;
+  payment_type: string;
+  transaction_code: string | null;
+  paid_at: string | null;
+  created_at: string;
+  description: string | null;
+}
+
+export interface WalletStatementResponse {
+  balance: string;
+  sync_source: string;
+  count: number;
+  transactions: WalletStatementTransaction[];
 }
 
 // ============================================================
@@ -1631,11 +1704,21 @@ export const paymentAPI = {
    * Poll payment status by order code
    */
   checkPaymentStatus: async (
-    orderCode: number,
+    orderCode: number | string,
   ): Promise<CheckPaymentStatusResponse> => {
     return apiCall<CheckPaymentStatusResponse>(
       `/check-payment-status/${orderCode}/`,
     );
+  },
+};
+
+export const walletAPI = {
+  getBalance: async (): Promise<WalletBalanceResponse> => {
+    return apiCall<WalletBalanceResponse>("/customers/wallet/balance/");
+  },
+
+  getStatement: async (limit = 20): Promise<WalletStatementResponse> => {
+    return apiCall<WalletStatementResponse>(`/customers/wallet/statement/?limit=${limit}`);
   },
 };
 

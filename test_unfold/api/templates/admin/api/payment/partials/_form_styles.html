@@ -1,0 +1,212 @@
+<style>
+  .payment-detail-page {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .payment-hero {
+    background: linear-gradient(135deg, #0f766e, #0f172a);
+    color: #fff;
+    border-radius: 18px;
+    padding: 28px 32px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .payment-hero::before {
+    content: '';
+    position: absolute;
+    top: -40px;
+    right: -40px;
+    width: 180px;
+    height: 180px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  .payment-hero-top,
+  .payment-hero-actions,
+  .payment-hero-meta {
+    position: relative;
+    z-index: 1;
+  }
+
+  .payment-hero-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+  }
+
+  .payment-hero-badge,
+  .payment-hero-status,
+  .payment-hero-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 14px;
+    border-radius: 999px;
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .payment-hero-badge,
+  .payment-hero-btn {
+    background: rgba(255, 255, 255, 0.16);
+    color: #fff;
+    text-decoration: none;
+  }
+
+  .payment-hero-status.is-success { background: rgba(34, 197, 94, 0.22); }
+  .payment-hero-status.is-pending { background: rgba(251, 191, 36, 0.22); }
+  .payment-hero-status.is-failed { background: rgba(239, 68, 68, 0.22); }
+
+  .payment-hero-title {
+    margin: 0 0 10px;
+    font-size: 34px;
+    font-weight: 800;
+    position: relative;
+    z-index: 1;
+  }
+
+  .payment-hero-subtitle {
+    margin: 0 0 12px;
+    font-size: 15px;
+    opacity: 0.9;
+    position: relative;
+    z-index: 1;
+  }
+
+  .payment-hero-meta {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    opacity: 0.92;
+    font-size: 13px;
+    margin-bottom: 18px;
+  }
+
+  .payment-hero-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .payment-info-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+  }
+
+  .payment-card,
+  .payment-edit-shell {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  }
+
+  .payment-card-header,
+  .payment-edit-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #f3f4f6;
+  }
+
+  .payment-card-title,
+  .payment-edit-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: #111827;
+  }
+
+  .payment-edit-subtitle {
+    margin-top: 4px;
+    font-size: 13px;
+    color: #6b7280;
+  }
+
+  .payment-card-body,
+  .payment-edit-body {
+    padding: 18px 20px;
+  }
+
+  .payment-row {
+    display: flex;
+    gap: 16px;
+    padding: 10px 0;
+    border-bottom: 1px solid #f9fafb;
+  }
+
+  .payment-row:last-child { border-bottom: none; }
+
+  .payment-label {
+    width: 130px;
+    flex-shrink: 0;
+    font-size: 13px;
+    font-weight: 700;
+    color: #6b7280;
+  }
+
+  .payment-value {
+    flex: 1;
+    font-size: 14px;
+    color: #111827;
+    word-break: break-word;
+  }
+
+  .payment-link {
+    color: #2563eb;
+    text-decoration: none;
+    font-weight: 700;
+  }
+
+  .payment-link:hover { text-decoration: underline; }
+
+  .payment-code {
+    display: inline-block;
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-radius: 8px;
+    padding: 3px 8px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+
+  .payment-edit-body .module,
+  .payment-edit-body .inline-group,
+  .payment-edit-body .submit-row {
+    border-radius: 12px;
+    border: 1px solid #e5e7eb;
+    overflow: hidden;
+    box-shadow: none;
+    margin-bottom: 16px;
+  }
+
+  .payment-edit-body .module h2,
+  .payment-edit-body .inline-group h2 {
+    background: #f8fafc;
+    color: #111827;
+    font-size: 14px;
+    font-weight: 800;
+    padding: 14px 16px;
+  }
+
+  .payment-edit-body .form-row {
+    padding: 14px 16px;
+    border-top: 1px solid #f3f4f6;
+  }
+
+  .payment-edit-body .submit-row {
+    background: #fff;
+    padding: 16px;
+  }
+
+  @media (max-width: 900px) {
+    .payment-info-grid { grid-template-columns: 1fr; }
+  }
+</style>

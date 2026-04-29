@@ -72,6 +72,10 @@ class CustomerRegisterSerializer(serializers.Serializer):
         existing_customer = Customer.objects.filter(phone=phone).first()
         if existing_customer:
             raise serializers.ValidationError({"phone": "Số điện thoại đã được đăng ký"})
+
+        # Không cho phép trùng SĐT giữa Customer và Staff để tránh nhập nhằng role khi đăng nhập.
+        if Staff.objects.filter(phone=phone).exists():
+            raise serializers.ValidationError({"phone": "Số điện thoại đã được dùng cho tài khoản nhân viên"})
         
         # ✅ TẠO USER VỚI PASSWORD
         username = phone  # Dùng phone làm username
@@ -129,6 +133,12 @@ class RequestOTPSerializer(serializers.Serializer):
             if customer_exists:
                 raise serializers.ValidationError({
                     'phone': 'Số điện thoại đã được đăng ký. Vui lòng đăng nhập.'
+                })
+
+            # Chặn đăng ký customer bằng số đã gán cho staff.
+            if Staff.objects.filter(phone=phone).exists():
+                raise serializers.ValidationError({
+                    'phone': 'Số điện thoại đang được dùng cho tài khoản nhân viên.'
                 })
         
         # Generate 6-digit OTP
@@ -1078,6 +1088,32 @@ class VehicleReturnFinalizeSerializer(serializers.Serializer):
             except json.JSONDecodeError:
                 raise serializers.ValidationError("other_documents_urls phải là JSON string hợp lệ. VD: '[\\\"url1.jpg\\\", \\\"url2.pdf\\\"]'")
         return value
+
+
+class VehicleReturnHandoverChecklistItemSerializer(serializers.Serializer):
+    """Validate 1 hạng mục trong bảng 9 hạng mục bàn giao."""
+    notPassed = serializers.BooleanField(required=True)
+    passed = serializers.BooleanField(required=True)
+    quantity = serializers.CharField(required=True, allow_blank=True, max_length=50)
+    note = serializers.CharField(required=True, allow_blank=True, max_length=2000)
+
+    def validate(self, attrs):
+        if attrs['notPassed'] and attrs['passed']:
+            raise serializers.ValidationError('notPassed và passed không được cùng true')
+        return attrs
+
+
+class VehicleReturnHandoverChecklistSerializer(serializers.Serializer):
+    """Validate toàn bộ 9 hạng mục hiện trạng thực tế của xe."""
+    scratches = VehicleReturnHandoverChecklistItemSerializer(required=True)
+    tires = VehicleReturnHandoverChecklistItemSerializer(required=True)
+    brakes = VehicleReturnHandoverChecklistItemSerializer(required=True)
+    battery = VehicleReturnHandoverChecklistItemSerializer(required=True)
+    carpet = VehicleReturnHandoverChecklistItemSerializer(required=True)
+    inspection = VehicleReturnHandoverChecklistItemSerializer(required=True)
+    insurance = VehicleReturnHandoverChecklistItemSerializer(required=True)
+    smoke = VehicleReturnHandoverChecklistItemSerializer(required=True)
+    lights = VehicleReturnHandoverChecklistItemSerializer(required=True)
 
 
 # ========================================

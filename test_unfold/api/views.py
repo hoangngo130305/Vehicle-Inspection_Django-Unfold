@@ -11,8 +11,10 @@ from django.utils import timezone
 from django.http import HttpResponse
 from django.urls import reverse
 from django.conf import settings
-from django.db.models import Q
+from django.db.models import Q, Sum
+from django.db import connection, OperationalError, transaction as db_transaction
 from django.core.files.base import ContentFile
+from decimal import Decimal, InvalidOperation
 import os
 import uuid
 import json
@@ -23,6 +25,7 @@ from urllib.parse import quote
 from PIL import Image
 from payos import PayOS
 from payos.types import CreatePaymentLinkRequest, ItemData
+from dj_wallet.exceptions import InsufficientFunds, WalletException, ProductNotAvailable
 from .models import *
 from .serializers import *
 from .utils import render_contract_docx, convert_docx_bytes_to_pdf
@@ -94,6 +97,122 @@ def get_default_staff_signature_path():
     if os.path.exists(signature_path):
         return signature_path
     return None
+
+
+def get_file_path_or_none(file_field):
+    """Safely get filesystem path from a FileFieldFile; return None if file is empty/missing."""
+    try:
+        if file_field and getattr(file_field, 'name', None):
+            return file_field.path
+    except Exception:
+        return None
+    return None
+
+
+def _checkmark_from_value(value):
+    return 'X' if bool(value) else ''
+
+
+def _get_handover_item(checklist, key):
+    item = checklist.get(key, {}) if isinstance(checklist, dict) else {}
+    if not isinstance(item, dict):
+        item = {}
+    return {
+        'notPassed': bool(item.get('notPassed')),
+        'passed': bool(item.get('passed')),
+        'quantity': item.get('quantity', ''),
+        'note': item.get('note', ''),
+    }
+
+
+def _build_handover_template_data(order, return_log):
+    checklist = return_log.handover_checklist or {}
+
+    scratches = _get_handover_item(checklist, 'scratches')
+    tires = _get_handover_item(checklist, 'tires')
+    brakes = _get_handover_item(checklist, 'brakes')
+    battery = _get_handover_item(checklist, 'battery')
+    carpet = _get_handover_item(checklist, 'carpet')
+    inspection = _get_handover_item(checklist, 'inspection')
+    insurance = _get_handover_item(checklist, 'insurance')
+    smoke = _get_handover_item(checklist, 'smoke')
+    lights = _get_handover_item(checklist, 'lights')
+
+    now = timezone.now()
+    customer = order.customer
+    vehicle = order.vehicle
+    staff = return_log.returned_by
+
+    return {
+        'contract_number': order.order_code,
+        'contract_day': f"{now.day:02d}",
+        'contract_month': f"{now.month:02d}",
+        'contract_year': str(now.year),
+        'handover_day': f"{now.day:02d}",
+        'handover_month': f"{now.month:02d}",
+        'handover_year': str(now.year),
+        'handover_location': 'Ho Chi Minh',
+        'party_a_name': customer.full_name or '',
+        'customer_name': customer.full_name or '',
+        'customer_date_of_birth': str(customer.date_of_birth) if customer.date_of_birth else '',
+        'customer_id_number': customer.id_number or '',
+        'customer_id_issued_date': str(customer.id_issued_date) if customer.id_issued_date else '',
+        'customer_id_issued_place': customer.id_issued_place or '',
+        'customer_address': customer.address or '',
+        'customer_phone': customer.phone or '',
+        'vehicle_brand': vehicle.brand or '',
+        'vehicle_plate': vehicle.license_plate or '',
+        'vehicle_chassis_number': vehicle.chassis_number or '',
+        'vehicle_engine_number': vehicle.engine_number or '',
+        'service_company_name': 'TRUNG TAM HO TRO DICH VU DANG KIEM VIET DKV 50S',
+        'service_company_tax_code': '0316969591 - 00005',
+        'service_company_address': '26B Duong 34 - Phuong Thu Duc - TP.HCM',
+        'staff_name': staff.full_name if staff else '',
+        'staff_role': 'Nhan vien ky thuat',
+        'staff_phone': staff.phone if staff else '',
+        'zalo_phone_confirm': customer.phone or '',
+        'scratches_not_passed': _checkmark_from_value(scratches['notPassed']),
+        'scratches_passed': _checkmark_from_value(scratches['passed']),
+        'scratches_quantity': scratches['quantity'],
+        'scratches_note': scratches['note'],
+        'tires_not_passed': _checkmark_from_value(tires['notPassed']),
+        'tires_passed': _checkmark_from_value(tires['passed']),
+        'tires_quantity': tires['quantity'],
+        'tires_note': tires['note'],
+        'brakes_not_passed': _checkmark_from_value(brakes['notPassed']),
+        'brakes_passed': _checkmark_from_value(brakes['passed']),
+        'brakes_quantity': brakes['quantity'],
+        'brakes_note': brakes['note'],
+        'battery_not_passed': _checkmark_from_value(battery['notPassed']),
+        'battery_passed': _checkmark_from_value(battery['passed']),
+        'battery_quantity': battery['quantity'],
+        'battery_note': battery['note'],
+        'carpet_not_passed': _checkmark_from_value(carpet['notPassed']),
+        'carpet_passed': _checkmark_from_value(carpet['passed']),
+        'carpet_quantity': carpet['quantity'],
+        'carpet_note': carpet['note'],
+        'inspection_not_passed': _checkmark_from_value(inspection['notPassed']),
+        'inspection_passed': _checkmark_from_value(inspection['passed']),
+        'inspection_quantity': inspection['quantity'],
+        'inspection_note': inspection['note'],
+        'insurance_not_passed': _checkmark_from_value(insurance['notPassed']),
+        'insurance_passed': _checkmark_from_value(insurance['passed']),
+        'insurance_quantity': insurance['quantity'],
+        'insurance_note': insurance['note'],
+        'smoke_not_passed': _checkmark_from_value(smoke['notPassed']),
+        'smoke_passed': _checkmark_from_value(smoke['passed']),
+        'smoke_quantity': smoke['quantity'],
+        'smoke_note': smoke['note'],
+        'lights_not_passed': _checkmark_from_value(lights['notPassed']),
+        'lights_passed': _checkmark_from_value(lights['passed']),
+        'lights_quantity': lights['quantity'],
+        'lights_note': lights['note'],
+        'return_hour': f"{now.hour:02d}",
+        'return_minute': f"{now.minute:02d}",
+        'return_day': f"{now.day:02d}",
+        'return_month': f"{now.month:02d}",
+        'return_year': str(now.year),
+    }
 
 
 ORDER_STATUS_LABELS = {
@@ -346,6 +465,7 @@ def unified_login(request):
     otp_code = request.data.get('otp_code')
     provider = request.data.get('provider')  # google, facebook, apple
     social_token = request.data.get('token')
+    user_type = request.data.get('user_type')  # optional: customer | staff
     
     # ========================================
     # 1. ADMIN LOGIN (Username + Password)
@@ -363,7 +483,7 @@ def unified_login(request):
     # 3. PHONE + PASSWORD (Customer or Staff)
     # ========================================
     elif phone and password:
-        return handle_phone_password_login(request, phone, password)
+        return handle_phone_password_login(request, phone, password, user_type)
     
     # ========================================
     # 4. PHONE + OTP (Customer only)
@@ -428,62 +548,51 @@ def handle_admin_login(request, username, password):
         }, status=status.HTTP_400_BAD_REQUEST)
 
 
-def handle_phone_password_login(request, phone, password):
+def handle_phone_password_login(request, phone, password, user_type=None):
     """
     Xử lý đăng nhập bằng SĐT + Password
     Tự động phát hiện Customer hoặc Staff
     """
-    # Tìm Customer
-    try:
-        customer = Customer.objects.get(phone=phone)
-        user = customer.user
-        
-        # Verify password
-        if not user.check_password(password):
+    normalized_phone = str(phone).strip()
+    role_hint = (str(user_type).strip().lower() if user_type else '')
+
+    # Build candidate accounts and avoid early failure when same phone exists in multiple roles.
+    candidates = []
+
+    if role_hint in ('', 'customer'):
+        customer = Customer.objects.filter(phone=normalized_phone).select_related('user').first()
+        if customer:
+            candidates.append(('customer', customer, customer.user))
+
+    if role_hint in ('', 'staff'):
+        staffs = Staff.objects.filter(phone=normalized_phone).select_related('user')
+        for staff in staffs:
+            candidates.append(('staff', staff, staff.user))
+
+    for candidate_type, profile, user in candidates:
+        if not user.is_active:
+            continue
+
+        if user.check_password(password):
+            login(request, user, backend='django.contrib.auth.backends.ModelBackend')
+            token, created = Token.objects.get_or_create(user=user)
+
+            if candidate_type == 'customer':
+                return Response({
+                    'success': True,
+                    'message': 'Đăng nhập thành công',
+                    'token': token.key,
+                    'user_type': 'customer',
+                    'user_data': CustomerSerializer(profile).data
+                }, status=status.HTTP_200_OK)
+
             return Response({
-                'non_field_errors': ['Số điện thoại hoặc mật khẩu không đúng']
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Login
-        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-        token, created = Token.objects.get_or_create(user=user)
-        
-        return Response({
-            'success': True,
-            'message': 'Đăng nhập thành công',
-            'token': token.key,
-            'user_type': 'customer',
-            'user_data': CustomerSerializer(customer).data
-        }, status=status.HTTP_200_OK)
-        
-    except Customer.DoesNotExist:
-        pass
-    
-    # Tìm Staff
-    try:
-        staff = Staff.objects.get(phone=phone)
-        user = staff.user
-        
-        # Verify password
-        if not user.check_password(password):
-            return Response({
-                'non_field_errors': ['Số điện thoại hoặc mật khẩu không đúng']
-            }, status=status.HTTP_400_BAD_REQUEST)
-        
-        # Login
-        login(request, user, backend='django.contrib.auth.backends.ModelBackend')
-        token, created = Token.objects.get_or_create(user=user)
-        
-        return Response({
-            'success': True,
-            'message': 'Đăng nhập thành công',
-            'token': token.key,
-            'user_type': 'staff',
-            'user_data': StaffSerializer(staff).data
-        }, status=status.HTTP_200_OK)
-        
-    except Staff.DoesNotExist:
-        pass
+                'success': True,
+                'message': 'Đăng nhập thành công',
+                'token': token.key,
+                'user_type': 'staff',
+                'user_data': StaffSerializer(profile).data
+            }, status=status.HTTP_200_OK)
     
     # Không tìm thấy
     return Response({
@@ -928,11 +1037,99 @@ class CustomerViewSet(viewsets.ModelViewSet):
             return Response({'error': 'Không phải customer'}, status=403)
         
         customer = request.user.customer_profile
+
+        new_phone = request.data.get('phone')
+        if new_phone and Staff.objects.filter(phone=new_phone).exists():
+            return Response({'phone': ['Số điện thoại đã được sử dụng bởi tài khoản nhân viên']}, status=400)
+
         serializer = self.get_serializer(customer, data=request.data, partial=True)
         if serializer.is_valid():
             serializer.save()
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
+
+    @action(detail=False, methods=['get'], url_path='wallet/balance')
+    def wallet_balance(self, request):
+        if not hasattr(request.user, 'customer_profile'):
+            return Response({'error': 'Không phải customer'}, status=403)
+
+        customer = request.user.customer_profile
+        payments_qs = Payment.objects.filter(payment_type='wallet_topup').filter(
+            Q(user_id=str(customer.id)) | Q(notes__contains=f'wallet_topup_customer_id={customer.id}')
+        )
+        topup_total = payments_qs.filter(status='SUCCESS').aggregate(total=Sum('amount')).get('total') or Decimal('0')
+        # VND không có tiền lẻ - convert thành số nguyên
+        balance_vnd = int(topup_total)
+
+        return Response({
+            'wallet_slug': 'payos_sync',
+            'balance': str(balance_vnd),
+            'currency': 'VND',
+            'sync_source': 'payos_successful_wallet_topup',
+        })
+
+    @action(detail=False, methods=['post'], url_path='wallet/deposit')
+    def wallet_deposit(self, request):
+        return Response(
+            {
+                'error': 'Wallet chỉ dùng đồng bộ hiển thị từ PayOS. Dùng POST /api/create-payment với payment_target=wallet_topup để nạp.'
+            },
+            status=400,
+        )
+
+    @action(detail=False, methods=['post'], url_path='wallet/withdraw')
+    def wallet_withdraw(self, request):
+        return Response({'error': 'Wallet đồng bộ từ PayOS, không hỗ trợ rút tại endpoint này'}, status=400)
+
+    @action(detail=False, methods=['post'], url_path='wallet/transfer')
+    def wallet_transfer(self, request):
+        return Response({'error': 'Wallet đồng bộ từ PayOS, không hỗ trợ chuyển tiền tại endpoint này'}, status=400)
+
+    @action(detail=False, methods=['post'], url_path='wallet/pay-order')
+    def wallet_pay_order(self, request):
+        return Response({'error': 'Wallet đồng bộ từ PayOS, không hỗ trợ thanh toán đơn trực tiếp tại endpoint này'}, status=400)
+
+    @action(detail=False, methods=['get'], url_path='wallet/statement')
+    def wallet_statement(self, request):
+        if not hasattr(request.user, 'customer_profile'):
+            return Response({'error': 'Không phải customer'}, status=403)
+
+        customer = request.user.customer_profile
+        try:
+            limit = min(int(request.query_params.get('limit', 50)), 200)
+        except (TypeError, ValueError):
+            limit = 50
+        payments_qs = Payment.objects.filter(payment_type='wallet_topup').filter(
+            Q(user_id=str(customer.id)) | Q(notes__contains=f'wallet_topup_customer_id={customer.id}')
+        ).order_by('-created_at')[:limit]
+
+        topup_total = Payment.objects.filter(payment_type='wallet_topup', status='SUCCESS').filter(
+            Q(user_id=str(customer.id)) | Q(notes__contains=f'wallet_topup_customer_id={customer.id}')
+        ).aggregate(total=Sum('amount')).get('total') or Decimal('0')
+        # VND không có tiền lẻ - convert thành số nguyên
+        balance_vnd = int(topup_total)
+
+        data = []
+        for p in payments_qs:
+            data.append({
+                'payment_id': p.id,
+                'order_code': p.order_code,
+                'status': _status_to_public(p.status),
+                'amount': str(int(p.amount)),  # VND: loại bỏ thập phân
+                'payment_method': p.payment_method,
+                'payment_type': p.payment_type,
+                'transaction_code': p.transaction_code,
+                'paid_at': p.paid_at,
+                'created_at': p.created_at,
+                'description': p.description,
+            })
+
+        return Response({
+            'balance': str(balance_vnd),
+            'sync_source': 'payos_successful_wallet_topup',
+            'count': len(data),
+            'transactions': data,
+        })
 
 
 # ========================================
@@ -978,6 +1175,11 @@ class StaffViewSet(viewsets.ReadOnlyModelViewSet):
         if new_phone and Staff.objects.filter(phone=new_phone).exclude(id=staff.id).exists():
             return Response({
                 'error': 'Số điện thoại đã được sử dụng bởi nhân viên khác'
+            }, status=400)
+
+        if new_phone and Customer.objects.filter(phone=new_phone).exists():
+            return Response({
+                'error': 'Số điện thoại đã được sử dụng bởi tài khoản khách hàng'
             }, status=400)
 
         allowed_staff_fields = [
@@ -1551,8 +1753,8 @@ class OrderViewSet(viewsets.ModelViewSet):
         docx_bytes = render_contract_docx(
             template_path,
             data,
-            customer_sig_path=getattr(receipt.customer_signature, 'path', None),
-            staff_sig_path=getattr(receipt.staff_signature, 'path', None) or get_default_staff_signature_path()
+            customer_sig_path=get_file_path_or_none(receipt.customer_signature),
+            staff_sig_path=get_file_path_or_none(receipt.staff_signature) or get_default_staff_signature_path()
         )
 
         output_format = request.query_params.get('format', 'docx').lower()
@@ -1594,6 +1796,64 @@ class OrderViewSet(viewsets.ModelViewSet):
         )
         response['Content-Disposition'] = f'attachment; filename=hopdong_{order.order_code}.docx'
         response['X-Contract-PDF-URL'] = contract_pdf_download_url
+        return response
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated], url_path='generate-handover-docx')
+    def generate_handover_docx(self, request, pk=None):
+        """
+        GET /api/orders/{id}/generate-handover-docx/
+        Tao bien ban ban giao (DOCX) tu handover_template va ho tro ?format=pdf.
+        Luong chu ky giong hop dong nhan xe: customer_signature bat buoc, staff_signature tuy chon.
+        """
+        order = self.get_object()
+        try:
+            return_log = order.return_log
+        except VehicleReturnLog.DoesNotExist:
+            return Response({'error': 'Chua co bien ban tra xe'}, status=400)
+
+        customer_sig_path = get_file_path_or_none(return_log.customer_signature)
+        if not customer_sig_path:
+            return Response({'error': 'Chua co chu ky khach hang trong bien ban tra xe'}, status=400)
+
+        template_candidates = [
+            os.path.join(settings.BASE_DIR, 'templates', 'handover_template_with_signatures.docx'),
+            os.path.join(settings.BASE_DIR, 'templates', 'handover_template.docx'),
+        ]
+        template_path = next((p for p in template_candidates if os.path.exists(p)), None)
+        if not template_path:
+            return Response({'error': 'Template handover_template(.docx) khong ton tai'}, status=500)
+
+        data = _build_handover_template_data(order, return_log)
+
+        try:
+            docx_bytes = render_contract_docx(
+                template_path,
+                data,
+                customer_sig_path=customer_sig_path,
+                staff_sig_path=get_file_path_or_none(return_log.staff_signature) or get_default_staff_signature_path(),
+            )
+        except Exception as e:
+            return Response({'error': f'Tao bien ban ban giao that bai: {type(e).__name__}: {str(e)}'}, status=500)
+
+        output_format = request.query_params.get('format', 'docx').lower()
+        if output_format not in ('docx', 'pdf'):
+            return Response({'error': 'Invalid format. Su dung ?format=docx hoac ?format=pdf'}, status=400)
+
+        if output_format == 'pdf':
+            try:
+                pdf_bytes = convert_docx_bytes_to_pdf(docx_bytes)
+            except Exception as e:
+                return Response({'error': f'Chuyen DOCX sang PDF that bai: {str(e)}'}, status=500)
+
+            response = HttpResponse(pdf_bytes.getvalue(), content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename=bb_ban_giao_{order.order_code}.pdf'
+            return response
+
+        response = HttpResponse(
+            docx_bytes.getvalue(),
+            content_type='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+        )
+        response['Content-Disposition'] = f'attachment; filename=bb_ban_giao_{order.order_code}.docx'
         return response
 
     @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated], url_path='download-contract-pdf')
@@ -2478,7 +2738,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             docx_bytes = render_contract_docx(
                 template_path,
                 data,
-                customer_sig_path=getattr(receipt.customer_signature, 'path', None),
+                customer_sig_path=get_file_path_or_none(receipt.customer_signature),
                 staff_sig_path=get_default_staff_signature_path()
             )
             pdf_bytes = convert_docx_bytes_to_pdf(docx_bytes)
@@ -2685,6 +2945,221 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'status_display': get_order_status_label(order)
             }
         }, status=201)
+
+    @action(detail=True, methods=['post'], url_path='complete-vehicle-returned', permission_classes=[IsAuthenticated])
+    def complete_vehicle_returned(self, request, pk=None):
+        """
+        API: Nhập thông tin + 9 hạng mục biên bản trả xe và tạo biên bản bàn giao DOCX/PDF.
+        POST /api/orders/{id}/complete-vehicle-returned/
+
+        Flow dự kiến:
+        1) vehicle-return-initialize
+        2) complete-vehicle-returned
+        3) (optional) vehicle-return-finalize
+        """
+        if not hasattr(request.user, 'staff_profile'):
+            return Response({'success': False, 'error': 'Chỉ nhân viên mới có quyền thực hiện'}, status=403)
+
+        order = self.get_object()
+        try:
+            return_log = order.return_log
+        except VehicleReturnLog.DoesNotExist:
+            return Response({'success': False, 'error': 'Chưa có biên bản trả xe'}, status=404)
+
+        # Parse checklist từ multipart/json
+        raw_handover_checklist = request.data.get('handover_checklist')
+        if raw_handover_checklist is None:
+            return Response({
+                'success': False,
+                'error': 'Thiếu handover_checklist (9 hạng mục)'
+            }, status=400)
+
+        if isinstance(raw_handover_checklist, str):
+            try:
+                raw_handover_checklist = json.loads(raw_handover_checklist)
+            except json.JSONDecodeError:
+                return Response({
+                    'success': False,
+                    'error': 'handover_checklist phải là JSON object hoặc JSON string hợp lệ'
+                }, status=400)
+
+        checklist_serializer = VehicleReturnHandoverChecklistSerializer(data=raw_handover_checklist)
+        if not checklist_serializer.is_valid():
+            return Response({
+                'success': False,
+                'error': 'Dữ liệu 9 hạng mục không hợp lệ',
+                'details': checklist_serializer.errors
+            }, status=400)
+
+        # Cập nhật thông tin khách hàng nếu có (giống luồng nhận xe)
+        customer = order.customer
+        raw_customer_info = request.data.get('customer_info', {})
+        if isinstance(raw_customer_info, str):
+            try:
+                raw_customer_info = json.loads(raw_customer_info)
+            except json.JSONDecodeError:
+                raw_customer_info = {}
+        if not isinstance(raw_customer_info, dict):
+            raw_customer_info = {}
+
+        customer_info = {
+            'full_name': request.data.get('customer_name') or raw_customer_info.get('full_name'),
+            'birth_date': request.data.get('customer_date_of_birth') or raw_customer_info.get('birth_date'),
+            'id_number': request.data.get('customer_id_number') or raw_customer_info.get('id_number'),
+            'id_issue_date': request.data.get('customer_id_issued_date') or raw_customer_info.get('id_issue_date'),
+            'id_issue_place': request.data.get('customer_id_issued_place') or raw_customer_info.get('id_issue_place'),
+            'phone': request.data.get('customer_phone') or raw_customer_info.get('phone'),
+            'address': request.data.get('customer_address') or raw_customer_info.get('address'),
+        }
+
+        if customer_info.get('full_name'):
+            customer.full_name = customer_info['full_name']
+        if customer_info.get('birth_date'):
+            customer.date_of_birth = customer_info['birth_date']
+        if customer_info.get('id_number'):
+            customer.id_number = customer_info['id_number']
+        if customer_info.get('id_issue_date'):
+            customer.id_issued_date = customer_info['id_issue_date']
+        if customer_info.get('id_issue_place'):
+            customer.id_issued_place = customer_info['id_issue_place']
+        if customer_info.get('phone'):
+            customer.phone = customer_info['phone']
+        if customer_info.get('address'):
+            customer.address = customer_info['address']
+        customer.save()
+
+        # Bắt buộc chữ ký khách hàng như luồng nhận xe
+        customer_sig_upload = request.FILES.get('customer_signature')
+        if not customer_sig_upload:
+            return Response({
+                'success': False,
+                'error': 'Thiếu customer_signature. Vui lòng gửi file ảnh chữ ký khách hàng bằng multipart/form-data.'
+            }, status=400)
+
+        allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/webp']
+        max_size = 10 * 1024 * 1024
+        if customer_sig_upload.content_type not in allowed_types:
+            return Response({
+                'success': False,
+                'error': 'customer_signature: Định dạng không hợp lệ. Chỉ chấp nhận JPEG, PNG, WEBP'
+            }, status=400)
+        if customer_sig_upload.size > max_size:
+            return Response({
+                'success': False,
+                'error': 'customer_signature: File quá lớn. Tối đa 10MB'
+            }, status=400)
+
+        customer_sig_bytes = customer_sig_upload.read()
+        try:
+            with Image.open(BytesIO(customer_sig_bytes)) as img:
+                if img.format not in ('PNG', 'JPEG', 'WEBP'):
+                    raise ValueError('Ảnh không hợp lệ')
+                customer_sig_ext = 'jpg' if img.format == 'JPEG' else img.format.lower()
+        except Exception as exc:
+            return Response({'success': False, 'error': f'customer_signature: {str(exc)}'}, status=400)
+
+        # Staff signature optional
+        staff_sig_upload = request.FILES.get('staff_signature')
+        staff_sig_content = None
+        if staff_sig_upload:
+            if staff_sig_upload.content_type not in allowed_types:
+                return Response({
+                    'success': False,
+                    'error': 'staff_signature: Định dạng không hợp lệ. Chỉ chấp nhận JPEG, PNG, WEBP'
+                }, status=400)
+            if staff_sig_upload.size > max_size:
+                return Response({
+                    'success': False,
+                    'error': 'staff_signature: File quá lớn. Tối đa 10MB'
+                }, status=400)
+
+            staff_sig_bytes = staff_sig_upload.read()
+            try:
+                with Image.open(BytesIO(staff_sig_bytes)) as img:
+                    if img.format not in ('PNG', 'JPEG', 'WEBP'):
+                        raise ValueError('Ảnh không hợp lệ')
+                    staff_sig_ext = 'jpg' if img.format == 'JPEG' else img.format.lower()
+            except Exception as exc:
+                return Response({'success': False, 'error': f'staff_signature: {str(exc)}'}, status=400)
+
+            staff_sig_content = ContentFile(staff_sig_bytes, name=f"staff_sig_return_{uuid.uuid4().hex[:8]}.{staff_sig_ext}")
+
+        additional_notes = request.data.get('additional_notes', '')
+
+        # Lưu vào return_log
+        return_log.handover_checklist = checklist_serializer.validated_data
+        return_log.customer_signature = ContentFile(
+            customer_sig_bytes,
+            name=f"customer_sig_return_{uuid.uuid4().hex[:8]}.{customer_sig_ext}"
+        )
+        return_log.customer_confirmed = True
+        if staff_sig_content:
+            return_log.staff_signature = staff_sig_content
+        if additional_notes:
+            return_log.additional_notes = additional_notes
+        return_log.save()
+
+        template_candidates = [
+            os.path.join(settings.BASE_DIR, 'templates', 'handover_template_with_signatures.docx'),
+            os.path.join(settings.BASE_DIR, 'templates', 'handover_template.docx'),
+        ]
+        template_path = next((p for p in template_candidates if os.path.exists(p)), None)
+        if not template_path:
+            return Response({'success': False, 'error': 'Không tìm thấy template biên bản bàn giao'}, status=500)
+
+        data = _build_handover_template_data(order, return_log)
+
+        try:
+            docx_bytes = render_contract_docx(
+                template_path,
+                data,
+                customer_sig_path=get_file_path_or_none(return_log.customer_signature),
+                staff_sig_path=get_file_path_or_none(return_log.staff_signature) or get_default_staff_signature_path(),
+            )
+            pdf_bytes = convert_docx_bytes_to_pdf(docx_bytes)
+        except Exception as exc:
+            return Response({
+                'success': False,
+                'error': f'Tạo biên bản bàn giao thất bại: {type(exc).__name__}: {str(exc)}'
+            }, status=500)
+
+        # Lưu file vào Order để hiển thị trực tiếp tại Django Admin
+        handover_docx_filename = f"handover_{order.id}_{uuid.uuid4().hex[:8]}.docx"
+        order.handover_document = ContentFile(docx_bytes.getvalue(), name=handover_docx_filename)
+
+        handover_pdf_filename = f"handover_{order.id}_{uuid.uuid4().hex[:8]}.pdf"
+        order.handover_document_pdf = ContentFile(pdf_bytes.getvalue(), name=handover_pdf_filename)
+        order.handover_document_created_at = timezone.now()
+        order.save(update_fields=['handover_document', 'handover_document_pdf', 'handover_document_created_at'])
+
+        try:
+            docx_url = request.build_absolute_uri(order.handover_document.url) if order.handover_document else None
+        except Exception:
+            docx_url = None
+
+        try:
+            pdf_url = request.build_absolute_uri(order.handover_document_pdf.url) if order.handover_document_pdf else None
+        except Exception:
+            pdf_url = None
+
+        return Response({
+            'success': True,
+            'message': 'Đã cập nhật thông tin trả xe, lưu 9 hạng mục và tạo biên bản bàn giao thành công',
+            'order': {
+                'id': order.id,
+                'order_code': order.order_code,
+                'status': order.status.status_code if order.status else order.status_legacy,
+            },
+            'return_log': {
+                'id': return_log.id,
+                'status': return_log.status,
+                'handover_checklist': return_log.handover_checklist,
+            },
+            'handover_document': {
+                'docx_url': docx_url,
+                'pdf_url': pdf_url,
+            }
+        }, status=200)
     
     @action(detail=True, methods=['post', 'put'], url_path='vehicle-return-vehicle-inspection', permission_classes=[IsAuthenticated])
     def vehicle_return_vehicle_inspection(self, request, pk=None):
@@ -2848,6 +3323,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             }, status=400)
         
         return_log = order.return_log
+        current_return_status = return_log.status
         
         # 4. Cập nhật Vehicle.next_inspection_date (field có sẵn trong DB)
         vehicle = order.vehicle
@@ -2855,10 +3331,9 @@ class OrderViewSet(viewsets.ModelViewSet):
         vehicle.next_inspection_date = inspection_expiry_date
         vehicle.save()
         
-        # 5. Lưu snapshot vào VehicleReturnLog.certificate_expiry_date (field có sẵn trong DB)
+        # 5. Lưu snapshot vào VehicleReturnLog mà không đổi workflow status hiện tại
         return_log.certificate_expiry_date = inspection_expiry_date
-        return_log.status = 'inspection_expiry_updated'
-        return_log.save()
+        return_log.save(update_fields=['certificate_expiry_date', 'updated_at'])
         
         # 6. Return response
         return Response({
@@ -2873,7 +3348,7 @@ class OrderViewSet(viewsets.ModelViewSet):
             },
             'return_log': {
                 'id': return_log.id,
-                'status': return_log.status,
+                'status': current_return_status,
                 'certificate_expiry_date': str(return_log.certificate_expiry_date) if return_log.certificate_expiry_date else None
             }
         }, status=200)
@@ -2907,8 +3382,10 @@ class OrderViewSet(viewsets.ModelViewSet):
                 'error': f'Order phải ở trạng thái vehicle_returned. Hiện tại: {current_status_code}'
             }, status=400)
         
-        # 4. Kiểm tra status của biên bản (phải đã qua condition_checked)
-        if return_log.status not in ['condition_checked', 'completed']:
+        # 4. Kiểm tra status của biên bản.
+        # Giữ tương thích với dữ liệu cũ từng bị cập nhật sang inspection_expiry_updated.
+        allowed_finalize_statuses = ['condition_checked', 'completed', 'inspection_expiry_updated']
+        if return_log.status not in allowed_finalize_statuses:
             return Response({
                 'error': f'Biên bản phải ở trạng thái condition_checked. Hiện tại: {return_log.status}'
             }, status=400)
@@ -2980,36 +3457,18 @@ class OrderViewSet(viewsets.ModelViewSet):
                     'error': f'Lỗi xử lý chữ ký khách hàng: {str(e)}'
                 }, status=400)
         
-        # ⭐⭐ NEW (10/03/2026): NHÓM H - Bảng 9 hạng mục checklist
+        # ⭐⭐ NHÓM H - Bảng 9 hạng mục checklist (tái dùng validator riêng)
         handover_checklist = request.data.get('handover_checklist')
-        if handover_checklist:
-            if not isinstance(handover_checklist, dict):
+        if handover_checklist is not None:
+            checklist_serializer = VehicleReturnHandoverChecklistSerializer(data=handover_checklist)
+            if not checklist_serializer.is_valid():
                 return Response({
-                    'error': 'handover_checklist phải là object (dictionary)'
+                    'error': 'Dữ liệu handover_checklist không hợp lệ',
+                    'details': checklist_serializer.errors
                 }, status=400)
-            
-            # Validate structure (optional - có thể bỏ nếu muốn linh hoạt)
-            expected_keys = ['scratches', 'tires', 'brakes', 'battery', 'carpet', 
-                             'inspection', 'insurance', 'smoke', 'lights']
-            
-            for key in expected_keys:
-                if key in handover_checklist:
-                    item = handover_checklist[key]
-                    if not isinstance(item, dict):
-                        return Response({
-                            'error': f'handover_checklist.{key} phải là object'
-                        }, status=400)
-                    
-                    # Validate fields (optional)
-                    required_item_fields = ['notPassed', 'passed', 'quantity', 'note']
-                    for item_field in required_item_fields:
-                        if item_field not in item:
-                            return Response({
-                                'error': f'handover_checklist.{key} thiếu field: {item_field}'
-                            }, status=400)
-            
+
             # Lưu vào DB
-            return_log.handover_checklist = handover_checklist
+            return_log.handover_checklist = checklist_serializer.validated_data
         
         # 8. Update status → completed
         return_log.status = 'completed'
@@ -3040,6 +3499,54 @@ class OrderViewSet(viewsets.ModelViewSet):
         }
         
         return Response(response_data, status=200)
+
+    @action(detail=True, methods=['get', 'post', 'put'], url_path='vehicle-return-handover-checklist', permission_classes=[IsAuthenticated])
+    def vehicle_return_handover_checklist(self, request, pk=None):
+        """
+        API RIÊNG: Lấy/Lưu 9 hạng mục hiện trạng thực tế của xe.
+
+        GET  /api/orders/{id}/vehicle-return-handover-checklist/
+        POST /api/orders/{id}/vehicle-return-handover-checklist/
+        PUT  /api/orders/{id}/vehicle-return-handover-checklist/
+        """
+        user = request.user
+        if not hasattr(user, 'staff_profile'):
+            return Response({'error': 'Chỉ nhân viên mới có quyền thao tác biên bản trả xe'}, status=403)
+
+        order = self.get_object()
+
+        try:
+            return_log = order.return_log
+        except VehicleReturnLog.DoesNotExist:
+            return Response({'error': 'Chưa có biên bản trả xe. Vui lòng gọi initialize trước'}, status=404)
+
+        if request.method == 'GET':
+            return Response({
+                'success': True,
+                'order_id': order.id,
+                'order_code': order.order_code,
+                'handover_checklist': return_log.handover_checklist or {}
+            }, status=200)
+
+        payload = request.data.get('handover_checklist', request.data)
+        serializer = VehicleReturnHandoverChecklistSerializer(data=payload)
+        if not serializer.is_valid():
+            return Response({
+                'success': False,
+                'error': 'Dữ liệu 9 hạng mục không hợp lệ',
+                'details': serializer.errors
+            }, status=400)
+
+        return_log.handover_checklist = serializer.validated_data
+        return_log.save(update_fields=['handover_checklist', 'updated_at'])
+
+        return Response({
+            'success': True,
+            'message': 'Đã lưu 9 hạng mục hiện trạng thực tế của xe',
+            'order_id': order.id,
+            'order_code': order.order_code,
+            'handover_checklist': return_log.handover_checklist
+        }, status=200)
     
     # ===== ✅✅ NEW - NESTED ACTION FOR ADDITIONAL COSTS (10/03/2026) =====
     
@@ -3616,6 +4123,7 @@ def create_payment(request):
     method = str(request.data.get('method', 'QR')).upper()
     order_id = request.data.get('order_id')
     additional_cost_id = request.data.get('additional_cost_id')  # Cho thanh toán chi phí phát sinh trả xe
+    payment_target = str(request.data.get('payment_target', '')).lower().strip()
 
     # Parse amount
     amount = None
@@ -3628,9 +4136,6 @@ def create_payment(request):
     if amount is not None and amount < 10000:
         return Response({'error': 'Số tiền tối thiểu là 10.000 VND'}, status=status.HTTP_400_BAD_REQUEST)
 
-    if not order_id and not additional_cost_id:
-        return Response({'error': 'Cần truyền order_id hoặc additional_cost_id'}, status=status.HTTP_400_BAD_REQUEST)
-
     if method not in PAYMENT_METHOD_MAP:
         return Response({'error': 'Phương thức thanh toán không hợp lệ'}, status=status.HTTP_400_BAD_REQUEST)
 
@@ -3638,9 +4143,25 @@ def create_payment(request):
     linked_additional_cost = None
     payment_type = 'order'
     description = ''
+    payer_customer = None
+
+    # ── Luồng 0: Nạp ví dj-wallet qua PayOS ──
+    if payment_target == 'wallet_topup':
+        if not hasattr(request.user, 'customer_profile'):
+            return Response({'error': 'Nạp ví yêu cầu đăng nhập customer'}, status=status.HTTP_403_FORBIDDEN)
+        if amount is None:
+            return Response({'error': 'Thiếu amount cho nạp ví'}, status=status.HTTP_400_BAD_REQUEST)
+
+        payer_customer = request.user.customer_profile
+        description = f'Nap vi {payer_customer.phone}'
+        payment_type = 'wallet_topup'
+
+    # Các luồng thanh toán order/additional_cost giữ nguyên logic cũ.
+    if payment_type != 'wallet_topup' and not order_id and not additional_cost_id:
+        return Response({'error': 'Cần truyền order_id hoặc additional_cost_id'}, status=status.HTTP_400_BAD_REQUEST)
 
     # ── Luồng 1: Thanh toán chi phí phát sinh TRẢ XE ──
-    if additional_cost_id:
+    if payment_type != 'wallet_topup' and additional_cost_id:
         linked_additional_cost = VehicleReturnAdditionalCost.objects.filter(id=additional_cost_id).first()
         if not linked_additional_cost:
             return Response({'error': f'Không tìm thấy chi phí phát sinh id={additional_cost_id}'}, status=status.HTTP_404_NOT_FOUND)
@@ -3651,7 +4172,7 @@ def create_payment(request):
         payment_type = 'additional_cost'
 
     # ── Luồng 2: Thanh toán đơn hàng NHẬN XE ──
-    elif order_id:
+    elif payment_type != 'wallet_topup' and order_id:
         linked_order = Order.objects.filter(id=order_id).first()
         if not linked_order:
             return Response({'error': f'Không tìm thấy đơn hàng id={order_id}'}, status=status.HTTP_404_NOT_FOUND)
@@ -3701,7 +4222,11 @@ def create_payment(request):
     payment = Payment.objects.create(
         order=linked_order,
         order_code=order_code,
-        user_id=(str(linked_order.customer.id) if linked_order and linked_order.customer else None),
+        user_id=(
+            str(payer_customer.id)
+            if payment_type == 'wallet_topup' and payer_customer
+            else (str(linked_order.customer.id) if linked_order and linked_order.customer else None)
+        ),
         amount=amount,
         currency='VND',
         method=method,
@@ -3713,7 +4238,11 @@ def create_payment(request):
         qr_content=qr_payload,
         vietqr_code_url=qr_image_url,
         description=description,
-        notes=f'additional_cost_id={additional_cost_id}' if additional_cost_id else None,
+        notes=(
+            f'wallet_topup_customer_id={payer_customer.id}'
+            if payment_type == 'wallet_topup' and payer_customer
+            else (f'additional_cost_id={additional_cost_id}' if additional_cost_id else None)
+        ),
     )
 
     return Response({
@@ -3912,6 +4441,19 @@ def webhook_payos(request):
             )
             return Response({'success': False}, status=status.HTTP_404_NOT_FOUND)
         
+        # Nếu webhook lặp cho payment đã thành công -> trả success luôn (idempotent)
+        if payment.status == 'SUCCESS':
+            PaymentLog.objects.create(
+                payment=payment,
+                order_code=order_code,
+                type='WEBHOOK',
+                raw_data=json.dumps(payload, ensure_ascii=False),
+                status_code=code,
+                ip_address=request.META.get('REMOTE_ADDR'),
+                notes='ℹ️ Webhook lặp: payment đã SUCCESS trước đó',
+            )
+            return Response({'success': True}, status=status.HTTP_200_OK)
+
         # Cập nhật trạng thái thanh toán
         if payment_code == '00' and success:
             # Thanh toán thành công
@@ -3923,9 +4465,19 @@ def webhook_payos(request):
                 payment.transaction_code = str(transaction_ref)
             
             payment.save(update_fields=['status', 'paid_at', 'transaction_id', 'transaction_code', 'updated_at'])
+
+            # ── Luồng 0: Nạp ví (chỉ đồng bộ trạng thái hiển thị từ PayOS) ──
+            if payment.payment_type == 'wallet_topup':
+                # Atomic + lock payment row để đánh dấu sync idempotent.
+                with db_transaction.atomic():
+                    locked_payment = Payment.objects.select_for_update().get(id=payment.id)
+                    already_topped_up = (locked_payment.notes or '').find('wallet_topup_applied=true') >= 0
+                    if not already_topped_up:
+                        locked_payment.notes = ((locked_payment.notes or '') + '|wallet_topup_applied=true').strip('|')
+                        locked_payment.save(update_fields=['notes', 'updated_at'])
             
             # ── Luồng 2: Thanh toán đơn hàng NHẬN XE ──
-            if payment.payment_type == 'order' and payment.order:
+            elif payment.payment_type == 'order' and payment.order:
                 payment.order.payment_status = 'paid'
                 payment.order.payment_completed_at = timezone.now()
                 if payment.payment_method:
@@ -3938,7 +4490,7 @@ def webhook_payos(request):
                     cost_id = int(payment.notes.replace('additional_cost_id=', ''))
                     cost = VehicleReturnAdditionalCost.objects.filter(id=cost_id).first()
                     if cost:
-                        cost.payment_status = 'paid'
+                        cost.payment_status = 'SUCCESS'
                         cost.paid_at = timezone.now()
                         cost.transaction_id = str(transaction_ref) if transaction_ref else None
                         cost.save(update_fields=['payment_status', 'paid_at', 'transaction_id', 'updated_at'])
@@ -4621,7 +5173,7 @@ class VehicleReturnAdditionalCostViewSet(viewsets.ModelViewSet):
         cost = self.get_object()
         
         # Validate
-        if cost.payment_status == 'paid':
+        if cost.payment_status == 'SUCCESS':
             return Response({
                 'success': False,
                 'error': 'Chi phí này đã được thanh toán'
@@ -4629,7 +5181,7 @@ class VehicleReturnAdditionalCostViewSet(viewsets.ModelViewSet):
         
         # Update
         cost.payment_method = 'cash'
-        cost.payment_status = 'paid'
+        cost.payment_status = 'SUCCESS'
         cost.paid_at = timezone.now()
         cost.payment_note = request.data.get('payment_note', 'Thanh toán tiền mặt')
         cost.save()
@@ -4639,6 +5191,55 @@ class VehicleReturnAdditionalCostViewSet(viewsets.ModelViewSet):
         return Response({
             'success': True,
             'message': '✅ Đã xác nhận thu tiền mặt thành công',
+            'cost': serializer.data
+        })
+
+    @action(methods=['post'], detail=True, url_path='request-payment-qr')
+    def request_payment_qr(self, request, pk=None):
+        """
+        POST /api/vehicle-return-additional-costs/{id}/request-payment-qr/
+
+        Tạo mã QR thanh toán cho 1 chi phí phát sinh.
+        """
+        import json
+        import uuid
+
+        cost = self.get_object()
+
+        if cost.payment_status == 'SUCCESS':
+            return Response({
+                'success': False,
+                'error': 'Chi phí này đã được thanh toán'
+            }, status=400)
+
+        qr_content = {
+            'bank_id': '970422',
+            'account_no': '1234567890',
+            'account_name': 'TRAM DANG KIEM',
+            'amount': float(cost.amount),
+            'description': f'Thanh toan chi phi {cost.id}',
+            'transaction_id': f'COST{uuid.uuid4().hex[:8].upper()}'
+        }
+
+        qr_url = (
+            'https://img.vietqr.io/image/970422-1234567890-compact2.jpg'
+            f'?amount={int(cost.amount)}&addInfo={qr_content["description"]}'
+        )
+
+        cost.payment_method = 'qr'
+        cost.payment_status = 'PENDING'
+        cost.qr_code_url = qr_url
+        cost.qr_content = json.dumps(qr_content)
+        cost.transaction_id = qr_content['transaction_id']
+        cost.save(update_fields=['payment_method', 'payment_status', 'qr_code_url', 'qr_content', 'transaction_id', 'updated_at'])
+
+        serializer = self.get_serializer(cost)
+
+        return Response({
+            'success': True,
+            'message': '✅ Đã tạo mã QR thanh toán',
+            'qr_code_url': qr_url,
+            'qr_content': qr_content,
             'cost': serializer.data
         })
     
@@ -4665,7 +5266,7 @@ class VehicleReturnAdditionalCostViewSet(viewsets.ModelViewSet):
             'payment_method': cost.payment_method,
             'paid_at': cost.paid_at,
             'amount': float(cost.amount),
-            'is_paid': cost.payment_status == 'paid',
+            'is_paid': cost.payment_status == 'SUCCESS',
             'transaction_id': cost.transaction_id
         })
     
@@ -4706,7 +5307,7 @@ class VehicleReturnAdditionalCostViewSet(viewsets.ModelViewSet):
             }, status=400)
         
         # Get costs
-        costs = self.get_queryset().filter(id__in=cost_ids, payment_status='pending')
+        costs = self.get_queryset().filter(id__in=cost_ids, payment_status='PENDING')
         
         if not costs.exists():
             return Response({
@@ -4733,7 +5334,7 @@ class VehicleReturnAdditionalCostViewSet(viewsets.ModelViewSet):
             # Update all costs
             for cost in costs:
                 cost.payment_method = 'qr'
-                cost.payment_status = 'processing'
+                cost.payment_status = 'PENDING'
                 cost.qr_code_url = mock_qr_url
                 cost.qr_content = json.dumps(qr_content)
                 cost.transaction_id = qr_content['transaction_id']
@@ -4754,7 +5355,7 @@ class VehicleReturnAdditionalCostViewSet(viewsets.ModelViewSet):
             # Update all costs as paid
             for cost in costs:
                 cost.payment_method = 'cash'
-                cost.payment_status = 'paid'
+                cost.payment_status = 'SUCCESS'
                 cost.paid_at = timezone.now()
                 cost.payment_note = payment_note or 'Thanh toán tiền mặt (hàng loạt)'
                 cost.save()
