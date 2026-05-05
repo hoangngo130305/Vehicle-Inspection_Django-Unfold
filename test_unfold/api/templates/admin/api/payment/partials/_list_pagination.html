@@ -5,17 +5,13 @@
   <div class="finance-pagination-links">
     {% if pagination.previous_url %}
     <a class="finance-page-link" href="{{ pagination.previous_url }}">Trước</a>
-    {% endif %}
-    {% for link in pagination.links %}
-      {% if link.ellipsis %}
-      <span class="finance-page-ellipsis">…</span>
-      {% elif link.is_current %}
-      <span class="finance-page-current">{{ link.number }}</span>
-      {% else %}
-      <a class="finance-page-link" href="{{ link.url }}">{{ link.number }}</a>
-      {% endif %}
-    {% endfor %}
-    {% if pagination.next_url %}
+    {% endif %} {% for link in pagination.links %} {% if link.ellipsis %}
+    <span class="finance-page-ellipsis">…</span>
+    {% elif link.is_current %}
+    <span class="finance-page-current">{{ link.number }}</span>
+    {% else %}
+    <a class="finance-page-link" href="{{ link.url }}">{{ link.number }}</a>
+    {% endif %} {% endfor %} {% if pagination.next_url %}
     <a class="finance-page-link" href="{{ pagination.next_url }}">Sau</a>
     {% endif %}
   </div>

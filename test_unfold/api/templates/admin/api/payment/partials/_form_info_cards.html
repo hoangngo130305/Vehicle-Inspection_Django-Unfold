@@ -4,12 +4,36 @@
       <div class="payment-card-title">Thông tin thanh toán</div>
     </div>
     <div class="payment-card-body">
-      <div class="payment-row"><div class="payment-label">Mã giao dịch</div><div class="payment-value"><span class="payment-code">{{ original.transaction_code|default:"-" }}</span></div></div>
-      <div class="payment-row"><div class="payment-label">Số tiền</div><div class="payment-value">{{ original.amount|floatformat:0 }}đ</div></div>
-      <div class="payment-row"><div class="payment-label">Phương thức</div><div class="payment-value">{{ original.get_payment_method_display|default:"-" }}</div></div>
-      <div class="payment-row"><div class="payment-label">Trạng thái</div><div class="payment-value">{{ original.status }}</div></div>
-      <div class="payment-row"><div class="payment-label">Loại thanh toán</div><div class="payment-value">{{ original.payment_type|default:"-" }}</div></div>
-      <div class="payment-row"><div class="payment-label">Tiền tệ</div><div class="payment-value">{{ original.currency|default:"VND" }}</div></div>
+      <div class="payment-row">
+        <div class="payment-label">Mã giao dịch</div>
+        <div class="payment-value">
+          <span class="payment-code"
+            >{{ original.transaction_code|default:"-" }}</span
+          >
+        </div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Số tiền</div>
+        <div class="payment-value">{{ original.amount|floatformat:0 }}đ</div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Phương thức</div>
+        <div class="payment-value">
+          {{ original.get_payment_method_display|default:"-" }}
+        </div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Trạng thái</div>
+        <div class="payment-value">{{ original.status }}</div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Loại thanh toán</div>
+        <div class="payment-value">{{ original.payment_type|default:"-" }}</div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Tiền tệ</div>
+        <div class="payment-value">{{ original.currency|default:"VND" }}</div>
+      </div>
     </div>
   </div>
 
@@ -18,12 +42,43 @@
       <div class="payment-card-title">Liên kết đơn hàng</div>
     </div>
     <div class="payment-card-body">
-      <div class="payment-row"><div class="payment-label">Mã đơn</div><div class="payment-value">{% if original.order %}<a class="payment-link" href="/admin/api/order/{{ original.order.id }}/change/">{{ original.order.order_code }}</a>{% else %}-{% endif %}</div></div>
-      <div class="payment-row"><div class="payment-label">Order code</div><div class="payment-value">{{ original.order_code|default:"-" }}</div></div>
-      <div class="payment-row"><div class="payment-label">Người dùng</div><div class="payment-value">{{ original.user_id|default:"-" }}</div></div>
-      <div class="payment-row"><div class="payment-label">Transaction ID</div><div class="payment-value">{{ original.transaction_id|default:"-" }}</div></div>
-      <div class="payment-row"><div class="payment-label">Thanh toán lúc</div><div class="payment-value">{% if original.paid_at %}{{ original.paid_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</div></div>
-      <div class="payment-row"><div class="payment-label">Ngày tạo</div><div class="payment-value">{{ original.created_at|date:"d/m/Y H:i" }}</div></div>
+      <div class="payment-row">
+        <div class="payment-label">Mã đơn</div>
+        <div class="payment-value">
+          {% if original.order %}<a
+            class="payment-link"
+            href="/admin/api/order/{{ original.order.id }}/change/"
+            >{{ original.order.order_code }}</a
+          >{% else %}-{% endif %}
+        </div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Order code</div>
+        <div class="payment-value">{{ original.order_code|default:"-" }}</div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Người dùng</div>
+        <div class="payment-value">{{ original.user_id|default:"-" }}</div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Transaction ID</div>
+        <div class="payment-value">
+          {{ original.transaction_id|default:"-" }}
+        </div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Thanh toán lúc</div>
+        <div class="payment-value">
+          {% if original.paid_at %}{{ original.paid_at|date:"d/m/Y H:i" }}{%
+          else %}-{% endif %}
+        </div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Ngày tạo</div>
+        <div class="payment-value">
+          {{ original.created_at|date:"d/m/Y H:i" }}
+        </div>
+      </div>
     </div>
   </div>
 
@@ -32,10 +87,40 @@
       <div class="payment-card-title">Kênh thanh toán</div>
     </div>
     <div class="payment-card-body">
-      <div class="payment-row"><div class="payment-label">Method</div><div class="payment-value">{{ original.method|default:"-" }}</div></div>
-      <div class="payment-row"><div class="payment-label">Payment URL</div><div class="payment-value">{% if original.payment_url %}<a class="payment-link" href="{{ original.payment_url }}" target="_blank" rel="noopener">Mở link thanh toán</a>{% else %}-{% endif %}</div></div>
-      <div class="payment-row"><div class="payment-label">VietQR image</div><div class="payment-value">{% if original.vietqr_code_url %}<a class="payment-link" href="{{ original.vietqr_code_url }}" target="_blank" rel="noopener">Mở QR image</a>{% else %}-{% endif %}</div></div>
-      <div class="payment-row"><div class="payment-label">QR content</div><div class="payment-value">{{ original.qr_content|default:original.qr_code|default:"-" }}</div></div>
+      <div class="payment-row">
+        <div class="payment-label">Method</div>
+        <div class="payment-value">{{ original.method|default:"-" }}</div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Payment URL</div>
+        <div class="payment-value">
+          {% if original.payment_url %}<a
+            class="payment-link"
+            href="{{ original.payment_url }}"
+            target="_blank"
+            rel="noopener"
+            >Mở link thanh toán</a
+          >{% else %}-{% endif %}
+        </div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">VietQR image</div>
+        <div class="payment-value">
+          {% if original.vietqr_code_url %}<a
+            class="payment-link"
+            href="{{ original.vietqr_code_url }}"
+            target="_blank"
+            rel="noopener"
+            >Mở QR image</a
+          >{% else %}-{% endif %}
+        </div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">QR content</div>
+        <div class="payment-value">
+          {{ original.qr_content|default:original.qr_code|default:"-" }}
+        </div>
+      </div>
     </div>
   </div>
 
@@ -44,9 +129,22 @@
       <div class="payment-card-title">Ghi chú hệ thống</div>
     </div>
     <div class="payment-card-body">
-      <div class="payment-row"><div class="payment-label">Ghi chú</div><div class="payment-value">{{ original.notes|default:"-" }}</div></div>
-      <div class="payment-row"><div class="payment-label">Cập nhật cuối</div><div class="payment-value">{{ original.updated_at|date:"d/m/Y H:i" }}</div></div>
-      <div class="payment-row"><div class="payment-label">Proof URL</div><div class="payment-value">{{ original.payment_proof_url|default:"-" }}</div></div>
+      <div class="payment-row">
+        <div class="payment-label">Ghi chú</div>
+        <div class="payment-value">{{ original.notes|default:"-" }}</div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Cập nhật cuối</div>
+        <div class="payment-value">
+          {{ original.updated_at|date:"d/m/Y H:i" }}
+        </div>
+      </div>
+      <div class="payment-row">
+        <div class="payment-label">Proof URL</div>
+        <div class="payment-value">
+          {{ original.payment_proof_url|default:"-" }}
+        </div>
+      </div>
     </div>
   </div>
 </div>

@@ -5,12 +5,28 @@
   </div>
   <div class="finance-header-actions">
     <form method="get" class="finance-filters">
-      <input type="hidden" name="active_tab" value="{{ active_tab }}" data-active-tab-input>
+      <input
+        type="hidden"
+        name="active_tab"
+        value="{{ active_tab }}"
+        data-active-tab-input
+      />
       <label class="finance-filter-field">
         <span>Trạng thái</span>
         <select name="status">
           {% for value, label in status_filter_choices %}
-          <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+          <option
+            value="{{ value }}"
+            {%
+            if
+            selected_status=""
+            ="value"
+            %}selected{%
+            endif
+            %}
+          >
+            {{ label }}
+          </option>
           {% endfor %}
         </select>
       </label>
@@ -18,7 +34,18 @@
         <span>Thời gian</span>
         <select name="period">
           {% for value, label in period_filter_choices %}
-          <option value="{{ value }}" {% if selected_period == value %}selected{% endif %}>{{ label }}</option>
+          <option
+            value="{{ value }}"
+            {%
+            if
+            selected_period=""
+            ="value"
+            %}selected{%
+            endif
+            %}
+          >
+            {{ label }}
+          </option>
           {% endfor %}
         </select>
       </label>
@@ -26,12 +53,25 @@
         <span>Phân trang</span>
         <select name="per_page">
           {% for size in page_size_choices %}
-          <option value="{{ size }}" {% if selected_page_size == size %}selected{% endif %}>{{ size }}/trang</option>
+          <option
+            value="{{ size }}"
+            {%
+            if
+            selected_page_size=""
+            ="size"
+            %}selected{%
+            endif
+            %}
+          >
+            {{ size }}/trang
+          </option>
           {% endfor %}
         </select>
       </label>
       <button type="submit" class="finance-filter-submit">Lọc dữ liệu</button>
-      <a href="?active_tab={{ active_tab }}" class="finance-filter-reset">Đặt lại</a>
+      <a href="?active_tab={{ active_tab }}" class="finance-filter-reset"
+        >Đặt lại</a
+      >
     </form>
     <a href="{{ export_csv_url }}" class="finance-export">
       <span>↓</span>

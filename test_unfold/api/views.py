@@ -26,6 +26,7 @@ from PIL import Image
 from payos import PayOS
 from payos.types import CreatePaymentLinkRequest, ItemData
 from dj_wallet.exceptions import InsufficientFunds, WalletException, ProductNotAvailable
+from dj_wallet.models import Transaction as WalletTransaction
 from .models import *
 from .serializers import *
 from .utils import render_contract_docx, convert_docx_bytes_to_pdf
@@ -1048,24 +1049,94 @@ class CustomerViewSet(viewsets.ModelViewSet):
             return Response(serializer.data)
         return Response(serializer.errors, status=400)
 
+    def _get_authenticated_customer(self, request):
+        if not hasattr(request.user, 'customer_profile'):
+            return None
+        return request.user.customer_profile
+
+    def _ensure_wallet_currency(self, wallet):
+        meta = dict(wallet.meta or {})
+        if meta.get('currency') == 'VND':
+            return wallet
+
+        meta['currency'] = 'VND'
+        wallet.meta = meta
+        wallet.save(update_fields=['meta', 'updated_at'])
+        return wallet
+
+    def _parse_wallet_amount(self, request):
+        amount_raw = request.data.get('amount')
+        if amount_raw in [None, '']:
+            raise ValidationError({'amount': ['Trường này là bắt buộc']})
+
+        try:
+            amount = Decimal(str(amount_raw))
+        except (TypeError, ValueError, InvalidOperation):
+            raise ValidationError({'amount': ['Số tiền không hợp lệ']})
+
+        if amount <= 0:
+            raise ValidationError({'amount': ['Số tiền phải lớn hơn 0']})
+
+        return amount
+
+    def _serialize_wallet_transaction(self, txn):
+        meta = txn.meta or {}
+        return {
+            'transaction_id': str(txn.uuid),
+            'type': txn.type,
+            'status': txn.status,
+            'amount': str(int(txn.amount)),
+            'confirmed': txn.confirmed,
+            'meta': meta,
+            'created_at': txn.created_at,
+            'updated_at': txn.updated_at,
+        }
+
+    def _sync_customer_wallet_topups(self, customer):
+        self._ensure_wallet_currency(customer.wallet)
+        successful_topups = Payment.objects.filter(
+            payment_type='wallet_topup',
+            status='SUCCESS',
+        ).filter(
+            Q(user_id=str(customer.id)) | Q(notes__contains=f'wallet_topup_customer_id={customer.id}')
+        ).order_by('created_at', 'id')
+
+        for payment in successful_topups:
+            notes = payment.notes or ''
+            if 'wallet_topup_applied=true' in notes:
+                continue
+
+            customer.deposit(
+                amount=payment.amount,
+                meta={
+                    'action': 'payos_wallet_topup',
+                    'payment_id': payment.id,
+                    'order_code': payment.order_code,
+                    'transaction_code': payment.transaction_code,
+                    'description': payment.description,
+                },
+                confirmed=True,
+            )
+
+            payment.notes = (notes + '|wallet_topup_applied=true').strip('|')
+            payment.save(update_fields=['notes', 'updated_at'])
+
     @action(detail=False, methods=['get'], url_path='wallet/balance')
     def wallet_balance(self, request):
-        if not hasattr(request.user, 'customer_profile'):
+        customer = self._get_authenticated_customer(request)
+        if not customer:
             return Response({'error': 'Không phải customer'}, status=403)
 
-        customer = request.user.customer_profile
-        payments_qs = Payment.objects.filter(payment_type='wallet_topup').filter(
-            Q(user_id=str(customer.id)) | Q(notes__contains=f'wallet_topup_customer_id={customer.id}')
-        )
-        topup_total = payments_qs.filter(status='SUCCESS').aggregate(total=Sum('amount')).get('total') or Decimal('0')
-        # VND không có tiền lẻ - convert thành số nguyên
-        balance_vnd = int(topup_total)
+        self._sync_customer_wallet_topups(customer)
+        wallet = self._ensure_wallet_currency(customer.wallet)
+        wallet.sync_balance()
 
         return Response({
-            'wallet_slug': 'payos_sync',
-            'balance': str(balance_vnd),
-            'currency': 'VND',
-            'sync_source': 'payos_successful_wallet_topup',
+            'wallet_slug': wallet.slug,
+            'balance': str(int(wallet.balance)),
+            'currency': wallet.currency,
+            'sync_source': 'dj_wallet_ledger',
+            'is_frozen': wallet.is_frozen,
         })
 
     @action(detail=False, methods=['post'], url_path='wallet/deposit')
@@ -1079,54 +1150,180 @@ class CustomerViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['post'], url_path='wallet/withdraw')
     def wallet_withdraw(self, request):
-        return Response({'error': 'Wallet đồng bộ từ PayOS, không hỗ trợ rút tại endpoint này'}, status=400)
+        customer = self._get_authenticated_customer(request)
+        if not customer:
+            return Response({'error': 'Không phải customer'}, status=403)
+
+        try:
+            self._sync_customer_wallet_topups(customer)
+            amount = self._parse_wallet_amount(request)
+            txn = customer.withdraw(
+                amount=amount,
+                meta={
+                    'action': 'withdraw',
+                    'description': request.data.get('description') or 'Rút tiền khỏi ví',
+                },
+                confirmed=True,
+            )
+        except ValidationError as exc:
+            return Response(exc.detail, status=400)
+        except InsufficientFunds as exc:
+            return Response({'error': str(exc)}, status=400)
+        except WalletException as exc:
+            return Response({'error': str(exc)}, status=400)
+
+        customer.wallet.refresh_from_db()
+        return Response({
+            'success': True,
+            'message': 'Đã rút tiền khỏi ví',
+            'balance': str(int(customer.wallet.balance)),
+            'transaction': self._serialize_wallet_transaction(txn),
+        }, status=200)
 
     @action(detail=False, methods=['post'], url_path='wallet/transfer')
     def wallet_transfer(self, request):
-        return Response({'error': 'Wallet đồng bộ từ PayOS, không hỗ trợ chuyển tiền tại endpoint này'}, status=400)
+        customer = self._get_authenticated_customer(request)
+        if not customer:
+            return Response({'error': 'Không phải customer'}, status=403)
+
+        self._sync_customer_wallet_topups(customer)
+        self._ensure_wallet_currency(customer.wallet)
+
+        target_customer = None
+        target_customer_id = request.data.get('to_customer_id')
+        target_phone = request.data.get('to_phone')
+
+        if target_customer_id:
+            target_customer = Customer.objects.filter(id=target_customer_id).first()
+        elif target_phone:
+            target_customer = Customer.objects.filter(phone=target_phone).first()
+
+        if not target_customer:
+            return Response({'error': 'Không tìm thấy customer nhận tiền'}, status=404)
+        if target_customer.id == customer.id:
+            return Response({'error': 'Không thể chuyển tiền cho chính mình'}, status=400)
+
+        self._ensure_wallet_currency(target_customer.wallet)
+
+        try:
+            amount = self._parse_wallet_amount(request)
+            transfer = customer.safe_transfer(
+                to_holder=target_customer,
+                amount=amount,
+                meta={
+                    'action': 'transfer',
+                    'description': request.data.get('description') or 'Chuyển tiền giữa hai customer',
+                    'from_customer_id': customer.id,
+                    'to_customer_id': target_customer.id,
+                },
+            )
+        except ValidationError as exc:
+            return Response(exc.detail, status=400)
+        except InsufficientFunds as exc:
+            return Response({'error': str(exc)}, status=400)
+        except WalletException as exc:
+            return Response({'error': str(exc)}, status=400)
+
+        customer.wallet.refresh_from_db()
+        target_customer.wallet.refresh_from_db()
+        return Response({
+            'success': True,
+            'message': 'Đã chuyển tiền thành công',
+            'transfer_id': str(transfer.uuid),
+            'from_customer': {
+                'id': customer.id,
+                'phone': customer.phone,
+                'balance': str(int(customer.wallet.balance)),
+            },
+            'to_customer': {
+                'id': target_customer.id,
+                'phone': target_customer.phone,
+                'balance': str(int(target_customer.wallet.balance)),
+            },
+            'amount': str(int(amount)),
+        }, status=200)
 
     @action(detail=False, methods=['post'], url_path='wallet/pay-order')
     def wallet_pay_order(self, request):
-        return Response({'error': 'Wallet đồng bộ từ PayOS, không hỗ trợ thanh toán đơn trực tiếp tại endpoint này'}, status=400)
+        customer = self._get_authenticated_customer(request)
+        if not customer:
+            return Response({'error': 'Không phải customer'}, status=403)
+
+        self._sync_customer_wallet_topups(customer)
+        self._ensure_wallet_currency(customer.wallet)
+
+        order_id = request.data.get('order_id')
+        if not order_id:
+            return Response({'error': 'Thiếu order_id'}, status=400)
+
+        order = Order.objects.filter(id=order_id, customer=customer).first()
+        if not order:
+            return Response({'error': 'Không tìm thấy đơn hàng của customer hiện tại'}, status=404)
+        if order.payment_status != 'unpaid':
+            return Response({'error': 'Đơn hàng này đã được thanh toán'}, status=400)
+
+        try:
+            wallet_txn = customer.pay(order)
+        except InsufficientFunds as exc:
+            return Response({'error': str(exc)}, status=400)
+        except ProductNotAvailable as exc:
+            return Response({'error': str(exc)}, status=400)
+        except WalletException as exc:
+            return Response({'error': str(exc)}, status=400)
+
+        order.payment_status = 'paid'
+        order.payment_method = 'wallet'
+        order.payment_completed_at = timezone.now()
+        order.save(update_fields=['payment_status', 'payment_method', 'payment_completed_at', 'updated_at'])
+
+        customer.wallet.refresh_from_db()
+        return Response({
+            'success': True,
+            'message': 'Đã thanh toán đơn hàng bằng ví',
+            'balance': str(int(customer.wallet.balance)),
+            'order': {
+                'id': order.id,
+                'order_code': order.order_code,
+                'payment_status': order.payment_status,
+                'payment_method': order.payment_method,
+                'payment_completed_at': order.payment_completed_at,
+            },
+            'transaction': self._serialize_wallet_transaction(wallet_txn),
+        }, status=200)
 
     @action(detail=False, methods=['get'], url_path='wallet/statement')
     def wallet_statement(self, request):
-        if not hasattr(request.user, 'customer_profile'):
+        customer = self._get_authenticated_customer(request)
+        if not customer:
             return Response({'error': 'Không phải customer'}, status=403)
 
-        customer = request.user.customer_profile
+        self._sync_customer_wallet_topups(customer)
         try:
             limit = min(int(request.query_params.get('limit', 50)), 200)
         except (TypeError, ValueError):
             limit = 50
-        payments_qs = Payment.objects.filter(payment_type='wallet_topup').filter(
-            Q(user_id=str(customer.id)) | Q(notes__contains=f'wallet_topup_customer_id={customer.id}')
-        ).order_by('-created_at')[:limit]
-
-        topup_total = Payment.objects.filter(payment_type='wallet_topup', status='SUCCESS').filter(
-            Q(user_id=str(customer.id)) | Q(notes__contains=f'wallet_topup_customer_id={customer.id}')
-        ).aggregate(total=Sum('amount')).get('total') or Decimal('0')
-        # VND không có tiền lẻ - convert thành số nguyên
-        balance_vnd = int(topup_total)
+        wallet = self._ensure_wallet_currency(customer.wallet)
+        wallet.sync_balance()
+        txns = WalletTransaction.objects.filter(wallet=wallet).order_by('-created_at')[:limit]
 
         data = []
-        for p in payments_qs:
+        for txn in txns:
             data.append({
-                'payment_id': p.id,
-                'order_code': p.order_code,
-                'status': _status_to_public(p.status),
-                'amount': str(int(p.amount)),  # VND: loại bỏ thập phân
-                'payment_method': p.payment_method,
-                'payment_type': p.payment_type,
-                'transaction_code': p.transaction_code,
-                'paid_at': p.paid_at,
-                'created_at': p.created_at,
-                'description': p.description,
+                'transaction_id': str(txn.uuid),
+                'type': txn.type,
+                'status': txn.status,
+                'amount': str(int(txn.amount)),
+                'confirmed': txn.confirmed,
+                'meta': txn.meta or {},
+                'created_at': txn.created_at,
+                'updated_at': txn.updated_at,
             })
 
         return Response({
-            'balance': str(balance_vnd),
-            'sync_source': 'payos_successful_wallet_topup',
+            'wallet_slug': wallet.slug,
+            'balance': str(int(wallet.balance)),
+            'currency': wallet.currency,
+            'sync_source': 'dj_wallet_ledger',
             'count': len(data),
             'transactions': data,
         })
@@ -4473,6 +4670,19 @@ def webhook_payos(request):
                     locked_payment = Payment.objects.select_for_update().get(id=payment.id)
                     already_topped_up = (locked_payment.notes or '').find('wallet_topup_applied=true') >= 0
                     if not already_topped_up:
+                        target_customer = Customer.objects.filter(id=locked_payment.user_id).first()
+                        if target_customer:
+                            target_customer.deposit(
+                                amount=locked_payment.amount,
+                                meta={
+                                    'action': 'payos_wallet_topup',
+                                    'payment_id': locked_payment.id,
+                                    'order_code': locked_payment.order_code,
+                                    'transaction_code': locked_payment.transaction_code,
+                                    'description': locked_payment.description,
+                                },
+                                confirmed=True,
+                            )
                         locked_payment.notes = ((locked_payment.notes or '') + '|wallet_topup_applied=true').strip('|')
                         locked_payment.save(update_fields=['notes', 'updated_at'])
             

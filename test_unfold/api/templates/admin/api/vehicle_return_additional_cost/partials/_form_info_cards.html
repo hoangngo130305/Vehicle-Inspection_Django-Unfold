@@ -1,45 +1,158 @@
 <div class="cost-info-grid">
   <div class="cost-card">
-    <div class="cost-card-header"><div class="cost-card-title">Thông tin phí phát sinh</div></div>
+    <div class="cost-card-header">
+      <div class="cost-card-title">Thông tin phí phát sinh</div>
+    </div>
     <div class="cost-card-body">
-      <div class="cost-row"><div class="cost-label">Đơn hàng</div><div class="cost-value">{% if original.order %}<a class="cost-link" href="/admin/api/order/{{ original.order.id }}/change/">{{ original.order.order_code }}</a>{% else %}-{% endif %}</div></div>
-      <div class="cost-row"><div class="cost-label">Tên phí</div><div class="cost-value">{{ original.cost_name }}</div></div>
-      <div class="cost-row"><div class="cost-label">Loại</div><div class="cost-value"><span class="cost-pill">{{ original.cost_type }}</span></div></div>
-      <div class="cost-row"><div class="cost-label">Số tiền</div><div class="cost-value">{{ original.amount|floatformat:0 }}đ</div></div>
-      <div class="cost-row"><div class="cost-label">Mô tả</div><div class="cost-value">{{ original.description|default:"-" }}</div></div>
+      <div class="cost-row">
+        <div class="cost-label">Đơn hàng</div>
+        <div class="cost-value">
+          {% if original.order %}<a
+            class="cost-link"
+            href="/admin/api/order/{{ original.order.id }}/change/"
+            >{{ original.order.order_code }}</a
+          >{% else %}-{% endif %}
+        </div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Tên phí</div>
+        <div class="cost-value">{{ original.cost_name }}</div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Loại</div>
+        <div class="cost-value">
+          <span class="cost-pill">{{ original.cost_type }}</span>
+        </div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Số tiền</div>
+        <div class="cost-value">{{ original.amount|floatformat:0 }}đ</div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Mô tả</div>
+        <div class="cost-value">{{ original.description|default:"-" }}</div>
+      </div>
     </div>
   </div>
 
   <div class="cost-card">
-    <div class="cost-card-header"><div class="cost-card-title">Trạng thái xử lý</div></div>
+    <div class="cost-card-header">
+      <div class="cost-card-title">Trạng thái xử lý</div>
+    </div>
     <div class="cost-card-body">
-      <div class="cost-row"><div class="cost-label">Bắt buộc</div><div class="cost-value">{% if original.is_required %}Có{% else %}Không{% endif %}</div></div>
-      <div class="cost-row"><div class="cost-label">Đã duyệt</div><div class="cost-value">{% if original.is_approved %}Đã duyệt{% else %}Chưa duyệt{% endif %}</div></div>
-      <div class="cost-row"><div class="cost-label">Duyệt lúc</div><div class="cost-value">{% if original.approved_at %}{{ original.approved_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</div></div>
-      <div class="cost-row"><div class="cost-label">Người tạo</div><div class="cost-value">{{ original.created_by|default:"-" }}</div></div>
-      <div class="cost-row"><div class="cost-label">Ngày tạo</div><div class="cost-value">{{ original.created_at|date:"d/m/Y H:i" }}</div></div>
+      <div class="cost-row">
+        <div class="cost-label">Bắt buộc</div>
+        <div class="cost-value">
+          {% if original.is_required %}Có{% else %}Không{% endif %}
+        </div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Đã duyệt</div>
+        <div class="cost-value">
+          {% if original.is_approved %}Đã duyệt{% else %}Chưa duyệt{% endif %}
+        </div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Duyệt lúc</div>
+        <div class="cost-value">
+          {% if original.approved_at %}{{ original.approved_at|date:"d/m/Y H:i"
+          }}{% else %}-{% endif %}
+        </div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Người tạo</div>
+        <div class="cost-value">{{ original.created_by|default:"-" }}</div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Ngày tạo</div>
+        <div class="cost-value">{{ original.created_at|date:"d/m/Y H:i" }}</div>
+      </div>
     </div>
   </div>
 
   <div class="cost-card">
-    <div class="cost-card-header"><div class="cost-card-title">Thông tin thanh toán</div></div>
+    <div class="cost-card-header">
+      <div class="cost-card-title">Thông tin thanh toán</div>
+    </div>
     <div class="cost-card-body">
-      <div class="cost-row"><div class="cost-label">Trạng thái</div><div class="cost-value">{{ original.payment_status }}</div></div>
-      <div class="cost-row"><div class="cost-label">Phương thức</div><div class="cost-value">{% if original.payment_method %}{{ original.get_payment_method_display }}{% else %}-{% endif %}</div></div>
-      <div class="cost-row"><div class="cost-label">Mã giao dịch</div><div class="cost-value">{{ original.transaction_id|default:"-" }}</div></div>
-      <div class="cost-row"><div class="cost-label">Thanh toán lúc</div><div class="cost-value">{% if original.paid_at %}{{ original.paid_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</div></div>
-      <div class="cost-row"><div class="cost-label">QR code</div><div class="cost-value">{% if original.qr_code_url %}<a class="cost-link" href="{{ original.qr_code_url }}" target="_blank" rel="noopener">Mở QR</a>{% else %}-{% endif %}</div></div>
+      <div class="cost-row">
+        <div class="cost-label">Trạng thái</div>
+        <div class="cost-value">{{ original.payment_status }}</div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Phương thức</div>
+        <div class="cost-value">
+          {% if original.payment_method %}{{ original.get_payment_method_display
+          }}{% else %}-{% endif %}
+        </div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Mã giao dịch</div>
+        <div class="cost-value">{{ original.transaction_id|default:"-" }}</div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Thanh toán lúc</div>
+        <div class="cost-value">
+          {% if original.paid_at %}{{ original.paid_at|date:"d/m/Y H:i" }}{%
+          else %}-{% endif %}
+        </div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">QR code</div>
+        <div class="cost-value">
+          {% if original.qr_code_url %}<a
+            class="cost-link"
+            href="{{ original.qr_code_url }}"
+            target="_blank"
+            rel="noopener"
+            >Mở QR</a
+          >{% else %}-{% endif %}
+        </div>
+      </div>
     </div>
   </div>
 
   <div class="cost-card">
-    <div class="cost-card-header"><div class="cost-card-title">Minh chứng và ghi chú</div></div>
+    <div class="cost-card-header">
+      <div class="cost-card-title">Minh chứng và ghi chú</div>
+    </div>
     <div class="cost-card-body">
-      <div class="cost-row"><div class="cost-label">Ảnh minh chứng</div><div class="cost-value">{% if original.photo_url %}<a class="cost-link" href="{{ original.photo_url }}" target="_blank" rel="noopener">Mở ảnh</a>{% else %}-{% endif %}</div></div>
-      <div class="cost-row"><div class="cost-label">Hóa đơn</div><div class="cost-value">{% if original.invoice_url %}<a class="cost-link" href="{{ original.invoice_url }}" target="_blank" rel="noopener">Mở hóa đơn</a>{% else %}-{% endif %}</div></div>
-      <div class="cost-row"><div class="cost-label">Ghi chú</div><div class="cost-value">{{ original.notes|default:"-" }}</div></div>
-      <div class="cost-row"><div class="cost-label">Ghi chú TT</div><div class="cost-value">{{ original.payment_note|default:"-" }}</div></div>
-      <div class="cost-row"><div class="cost-label">Cập nhật cuối</div><div class="cost-value">{{ original.updated_at|date:"d/m/Y H:i" }}</div></div>
+      <div class="cost-row">
+        <div class="cost-label">Ảnh minh chứng</div>
+        <div class="cost-value">
+          {% if original.photo_url %}<a
+            class="cost-link"
+            href="{{ original.photo_url }}"
+            target="_blank"
+            rel="noopener"
+            >Mở ảnh</a
+          >{% else %}-{% endif %}
+        </div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Hóa đơn</div>
+        <div class="cost-value">
+          {% if original.invoice_url %}<a
+            class="cost-link"
+            href="{{ original.invoice_url }}"
+            target="_blank"
+            rel="noopener"
+            >Mở hóa đơn</a
+          >{% else %}-{% endif %}
+        </div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Ghi chú</div>
+        <div class="cost-value">{{ original.notes|default:"-" }}</div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Ghi chú TT</div>
+        <div class="cost-value">{{ original.payment_note|default:"-" }}</div>
+      </div>
+      <div class="cost-row">
+        <div class="cost-label">Cập nhật cuối</div>
+        <div class="cost-value">{{ original.updated_at|date:"d/m/Y H:i" }}</div>
+      </div>
     </div>
   </div>
 </div>

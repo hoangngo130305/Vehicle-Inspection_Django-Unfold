@@ -1,24 +1,28 @@
 <script>
   (function () {
-    const buttons = document.querySelectorAll('[data-tab]');
-    const panels = document.querySelectorAll('[data-panel]');
-    const activeTabInput = document.querySelector('[data-active-tab-input]');
+    const buttons = document.querySelectorAll("[data-tab]");
+    const panels = document.querySelectorAll("[data-panel]");
+    const activeTabInput = document.querySelector("[data-active-tab-input]");
 
     function setActiveTab(tab) {
-      buttons.forEach((item) => item.classList.toggle('active', item.dataset.tab === tab));
-      panels.forEach((panel) => panel.classList.toggle('active', panel.dataset.panel === tab));
+      buttons.forEach((item) =>
+        item.classList.toggle("active", item.dataset.tab === tab),
+      );
+      panels.forEach((panel) =>
+        panel.classList.toggle("active", panel.dataset.panel === tab),
+      );
       if (activeTabInput) {
         activeTabInput.value = tab;
       }
     }
 
     buttons.forEach((button) => {
-      button.addEventListener('click', function () {
+      button.addEventListener("click", function () {
         setActiveTab(this.dataset.tab);
       });
     });
 
-    const activeButton = document.querySelector('.finance-tab-btn.active');
+    const activeButton = document.querySelector(".finance-tab-btn.active");
     if (activeButton) {
       setActiveTab(activeButton.dataset.tab);
     }

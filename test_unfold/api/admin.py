@@ -2360,6 +2360,15 @@ class PaymentAdmin(admin.ModelAdmin):
             'additional_costs_paid_count': additional_costs_summary['paid_count'] or 0,
             'export_csv_url': export_csv_url,
         })
+
+        # Tránh Django Admin hiểu nhầm query param custom (status/period/per_page/...)
+        # thành lookup mặc định và redirect về changelist cũ (?e=1).
+        admin_request_params = request.GET.copy()
+        for key in ['status', 'period', 'per_page', 'active_tab', *payment_page_params]:
+            admin_request_params.pop(key, None)
+        request.GET = admin_request_params
+        request.META['QUERY_STRING'] = admin_request_params.urlencode()
+
         return super().changelist_view(request, extra_context=extra_context)
 
     def _export_payments_csv(self, queryset):

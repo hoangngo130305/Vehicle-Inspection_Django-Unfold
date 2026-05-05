@@ -1,19 +1,12 @@
-{% extends "admin/change_list.html" %}
-
-{% block content %}
-
-{% include "admin/api/payment/partials/_list_styles.html" %}
-
-{{ block.super }}
+{% extends "admin/change_list.html" %} {% block content %} {% include
+"admin/api/payment/partials/_list_styles.html" %}
 
 <div class="finance-dashboard">
   <div class="finance-shell">
-    {% include "admin/api/payment/partials/_list_header.html" %}
-    {% include "admin/api/payment/partials/_list_cards.html" %}
-    {% include "admin/api/payment/partials/_list_tabs.html" %}
+    {% include "admin/api/payment/partials/_list_header.html" %} {% include
+    "admin/api/payment/partials/_list_cards.html" %} {% include
+    "admin/api/payment/partials/_list_tabs.html" %}
   </div>
 </div>
 
-{% include "admin/api/payment/partials/_list_scripts.html" %}
-
-{% endblock %}
+{% include "admin/api/payment/partials/_list_scripts.html" %} {% endblock %}

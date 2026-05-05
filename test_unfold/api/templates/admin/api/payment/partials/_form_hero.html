@@ -1,20 +1,27 @@
 <div class="payment-hero">
   <div class="payment-hero-top">
-    <div class="payment-hero-badge">{{ original.transaction_code|default:"PAYMENT" }}</div>
-    <div class="payment-hero-status {% if original.status == 'SUCCESS' or original.status == 'paid' %}is-success{% elif original.status == 'PENDING' or original.status == 'pending' %}is-pending{% else %}is-failed{% endif %}">
+    <div class="payment-hero-badge">
+      {{ original.transaction_code|default:"PAYMENT" }}
+    </div>
+    <div
+      class="payment-hero-status {% if original.status == 'SUCCESS' or original.status == 'paid' %}is-success{% elif original.status == 'PENDING' or original.status == 'pending' %}is-pending{% else %}is-failed{% endif %}"
+    >
       {{ original.status }}
     </div>
   </div>
 
   <h1 class="payment-hero-title">{{ original.amount|floatformat:0 }}đ</h1>
   <p class="payment-hero-subtitle">
-    {{ original.get_payment_method_display|default:"-" }}
-    {% if original.order %}• Đơn {{ original.order.order_code }}{% endif %}
+    {{ original.get_payment_method_display|default:"-" }} {% if original.order
+    %} • Đơn {{ original.order.order_code }} {% endif %}
   </p>
 
   <div class="payment-hero-meta">
     <span>Loại: {{ original.payment_type|default:"-" }}</span>
-    <span>Thanh toán lúc: {% if original.paid_at %}{{ original.paid_at|date:"d/m/Y H:i" }}{% else %}-{% endif %}</span>
+    <span>
+      Thanh toán lúc: {% if original.paid_at %} {{ original.paid_at|date:"d/m/Y
+      H:i" }} {% else %} - {% endif %}
+    </span>
   </div>
 
   <div class="payment-hero-actions">

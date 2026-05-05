@@ -1063,10 +1063,12 @@ class VehicleReturnFinalizeSerializer(serializers.Serializer):
     )
     
     # === NHÓM G: CHỮ KÝ KHÁCH HÀNG ===
+    # Không bắt buộc vì đã được lưu ở bước complete-vehicle-returned trước đó
     customer_signature = serializers.CharField(
-        required=True,  # BẮT BUỘC
-        allow_blank=False,
-        help_text='Chữ ký khách hàng (base64 hoặc data:image/png;base64,...) (BẮT BUỘC)'
+        required=False,
+        allow_blank=True,
+        allow_null=True,
+        help_text='Chữ ký khách hàng (base64 hoặc data:image/png;base64,...) - Không bắt buộc nếu đã gọi complete-vehicle-returned'
     )
     
     # REMOVED: vehicle_insurance_url (không dùng nữa)
