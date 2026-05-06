@@ -270,6 +270,41 @@ class ResetPasswordWithOTPSerializer(serializers.Serializer):
         return target_user
 
 
+class ChangePasswordSerializer(serializers.Serializer):
+    """Đổi mật khẩu khi đã đăng nhập"""
+    old_password = serializers.CharField(max_length=128, write_only=True)
+    new_password = serializers.CharField(max_length=128, min_length=6, write_only=True)
+
+    def validate_new_password(self, value):
+        if len(value) < 6:
+            raise serializers.ValidationError("Mật khẩu mới phải có ít nhất 6 ký tự")
+        return value
+
+    def validate(self, data):
+        request = self.context.get('request')
+        user = getattr(request, 'user', None)
+
+        if not user or not user.is_authenticated:
+            raise serializers.ValidationError({"detail": "Bạn cần đăng nhập để đổi mật khẩu"})
+
+        if not user.check_password(data['old_password']):
+            raise serializers.ValidationError({"old_password": "Mật khẩu cũ không chính xác"})
+
+        if data['old_password'] == data['new_password']:
+            raise serializers.ValidationError({"new_password": "Mật khẩu mới phải khác mật khẩu cũ"})
+
+        data['user'] = user
+        return data
+
+    def save(self):
+        user = self.validated_data['user']
+        new_password = self.validated_data['new_password']
+
+        user.set_password(new_password)
+        user.save(update_fields=['password'])
+        return user
+
+
 # ========================================
 # 2. STAFF SERIALIZERS
 # ========================================

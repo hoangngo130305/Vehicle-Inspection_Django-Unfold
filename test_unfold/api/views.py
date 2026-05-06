@@ -912,6 +912,31 @@ def reset_password_with_otp(request):
     return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def change_password(request):
+    """
+    Đổi mật khẩu khi đã đăng nhập.
+
+    POST /api/auth/change-password/
+
+    Body:
+    {
+        "old_password": "oldPassword123",
+        "new_password": "newPassword123"
+    }
+    """
+    serializer = ChangePasswordSerializer(data=request.data, context={'request': request})
+    if serializer.is_valid():
+        serializer.save()
+        return Response({
+            'success': True,
+            'message': 'Đổi mật khẩu thành công.'
+        }, status=status.HTTP_200_OK)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
 # ========================================
 # CUSTOMER REGISTRATION
 # ========================================
