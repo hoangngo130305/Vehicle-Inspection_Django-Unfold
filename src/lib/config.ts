@@ -11,12 +11,12 @@
  * Django Backend API Base URL
  * Hard-coded to localhost for development
  */
-export const API_BASE_URL = "http://14.224.210.210:8008/api";
+export const API_BASE_URL = "http://127.0.0.1:8000/api";
 
 /**
  * Media/Upload Base URL (for images, PDFs, etc.)
  */
-export const MEDIA_BASE_URL = "http://14.224.210.210:8008";
+export const MEDIA_BASE_URL = "http://127.0.0.1:8000";
 
 /**
  * Get full URL for media files (PDF, images)

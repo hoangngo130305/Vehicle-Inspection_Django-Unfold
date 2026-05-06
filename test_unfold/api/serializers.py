@@ -106,7 +106,7 @@ class CustomerRegisterSerializer(serializers.Serializer):
 class RequestOTPSerializer(serializers.Serializer):
     """Yêu cầu OTP"""
     phone = serializers.CharField(max_length=20)
-    purpose = serializers.ChoiceField(choices=['register', 'login'], default='login')
+    purpose = serializers.ChoiceField(choices=['register', 'login', 'reset_password'], default='login')
     
     def validate_phone(self, value):
         if not value.startswith('0') or len(value) not in [10, 11]:
@@ -119,7 +119,6 @@ class RequestOTPSerializer(serializers.Serializer):
         
         # ✅ Check if phone exists for LOGIN purpose
         if purpose == 'login':
-            from .models import Customer
             customer_exists = Customer.objects.filter(phone=phone).exists()
             if not customer_exists:
                 raise serializers.ValidationError({
@@ -128,7 +127,6 @@ class RequestOTPSerializer(serializers.Serializer):
         
         # ✅ Check if phone already registered for REGISTER purpose
         if purpose == 'register':
-            from .models import Customer
             customer_exists = Customer.objects.filter(phone=phone).exists()
             if customer_exists:
                 raise serializers.ValidationError({
@@ -139,6 +137,16 @@ class RequestOTPSerializer(serializers.Serializer):
             if Staff.objects.filter(phone=phone).exists():
                 raise serializers.ValidationError({
                     'phone': 'Số điện thoại đang được dùng cho tài khoản nhân viên.'
+                })
+
+        # ✅ Check if phone exists for RESET PASSWORD purpose
+        if purpose == 'reset_password':
+            customer_exists = Customer.objects.filter(phone=phone).exists()
+            staff_exists = Staff.objects.filter(phone=phone).exists()
+
+            if not customer_exists and not staff_exists:
+                raise serializers.ValidationError({
+                    'phone': 'Số điện thoại chưa được đăng ký trong hệ thống.'
                 })
         
         # Generate 6-digit OTP
@@ -190,6 +198,76 @@ class VerifyOTPSerializer(serializers.Serializer):
         data['otp'] = otp
         data['customer'] = customer
         return data
+
+
+class ResetPasswordWithOTPSerializer(serializers.Serializer):
+    """Đổi mật khẩu bằng OTP (quên mật khẩu)"""
+    phone = serializers.CharField(max_length=20)
+    otp_code = serializers.CharField(max_length=6)
+    new_password = serializers.CharField(max_length=128, min_length=6, write_only=True)
+    confirm_password = serializers.CharField(max_length=128, min_length=6, write_only=True, required=False, allow_blank=True)
+
+    def validate_phone(self, value):
+        if not value.startswith('0') or len(value) not in [10, 11]:
+            raise serializers.ValidationError("Số điện thoại không hợp lệ")
+        return value
+
+    def validate_new_password(self, value):
+        if len(value) < 6:
+            raise serializers.ValidationError("Mật khẩu mới phải có ít nhất 6 ký tự")
+        return value
+
+    def validate(self, data):
+        phone = data['phone']
+        otp_code = data['otp_code']
+        new_password = data['new_password']
+        confirm_password = data.get('confirm_password')
+
+        if confirm_password and new_password != confirm_password:
+            raise serializers.ValidationError({"confirm_password": "Xác nhận mật khẩu không khớp"})
+
+        otp = OTP.objects.filter(
+            phone=phone,
+            otp_code=otp_code,
+            purpose='reset_password',
+            is_verified=False,
+            expires_at__gt=timezone.now()
+        ).first()
+
+        if not otp:
+            raise serializers.ValidationError({"otp_code": "OTP không hợp lệ hoặc đã hết hạn"})
+
+        customer = Customer.objects.filter(phone=phone).first()
+        staff_qs = Staff.objects.filter(phone=phone)
+
+        target_user = None
+        if customer:
+            target_user = customer.user
+        elif staff_qs.exists():
+            if staff_qs.count() > 1:
+                raise serializers.ValidationError({"phone": "Số điện thoại đang gắn nhiều tài khoản nhân viên"})
+            target_user = staff_qs.first().user
+
+        if not target_user:
+            raise serializers.ValidationError({"phone": "Không tìm thấy tài khoản tương ứng"})
+
+        data['otp'] = otp
+        data['target_user'] = target_user
+        return data
+
+    def save(self):
+        otp = self.validated_data['otp']
+        target_user = self.validated_data['target_user']
+        new_password = self.validated_data['new_password']
+
+        target_user.set_password(new_password)
+        target_user.save(update_fields=['password'])
+
+        otp.is_verified = True
+        otp.verified_at = timezone.now()
+        otp.save(update_fields=['is_verified', 'verified_at'])
+
+        return target_user
 
 
 # ========================================

@@ -764,7 +764,10 @@ def customer_request_otp(request):
     """
     serializer = RequestOTPSerializer(data=request.data)
     if serializer.is_valid():
-        otp = serializer.create_otp()
+        try:
+            otp = serializer.create_otp()
+        except ValidationError as exc:
+            return Response(exc.detail, status=status.HTTP_400_BAD_REQUEST)
         return Response({
             'success': True,
             'message': f'OTP đã được gửi đến {otp.phone}',
@@ -786,7 +789,7 @@ def verify_otp(request):
     Request Body:
         - phone (str): Số điện thoại
         - otp_code (str): Mã OTP 6 số
-        - purpose (str): 'register' hoặc 'login'
+        - purpose (str): 'register' hoặc 'login' hoặc 'reset_password'
     
     Response:
         - success (bool): True/False
@@ -818,11 +821,11 @@ def verify_otp(request):
         }, status=status.HTTP_400_BAD_REQUEST)
     
     # 3. Validate purpose
-    if purpose not in ['register', 'login']:
+    if purpose not in ['register', 'login', 'reset_password']:
         return Response({
             'success': False,
             'valid': False,
-            'message': "Purpose phải là 'register' hoặc 'login'",
+            'message': "Purpose phải là 'register', 'login' hoặc 'reset_password'",
             'error_code': 'INVALID_PURPOSE'
         }, status=status.HTTP_400_BAD_REQUEST)
     
@@ -880,6 +883,33 @@ def verify_otp(request):
             'message': 'Lỗi hệ thống. Vui lòng thử lại',
             'error_code': 'SYSTEM_ERROR'
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def reset_password_with_otp(request):
+    """
+    Đổi mật khẩu bằng OTP (quên mật khẩu).
+
+    POST /api/auth/reset-password/
+
+    Body:
+    {
+        "phone": "0912345678",
+        "otp_code": "123456",
+        "new_password": "newPassword123",
+        "confirm_password": "newPassword123"
+    }
+    """
+    serializer = ResetPasswordWithOTPSerializer(data=request.data)
+    if serializer.is_valid():
+        serializer.save()
+        return Response({
+            'success': True,
+            'message': 'Đổi mật khẩu thành công. Vui lòng đăng nhập lại.'
+        }, status=status.HTTP_200_OK)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 # ========================================
