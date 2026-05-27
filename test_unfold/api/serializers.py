@@ -3,6 +3,7 @@ from django.contrib.auth.models import User
 from django.urls import reverse
 from .models import *
 import random
+from decimal import Decimal, InvalidOperation
 from datetime import timedelta
 from django.utils import timezone
 
@@ -119,6 +120,7 @@ class RequestOTPSerializer(serializers.Serializer):
         
         # ✅ Check if phone exists for LOGIN purpose
         if purpose == 'login':
+            from .models import Customer
             customer_exists = Customer.objects.filter(phone=phone).exists()
             if not customer_exists:
                 raise serializers.ValidationError({
@@ -127,6 +129,7 @@ class RequestOTPSerializer(serializers.Serializer):
         
         # ✅ Check if phone already registered for REGISTER purpose
         if purpose == 'register':
+            from .models import Customer
             customer_exists = Customer.objects.filter(phone=phone).exists()
             if customer_exists:
                 raise serializers.ValidationError({
@@ -141,12 +144,12 @@ class RequestOTPSerializer(serializers.Serializer):
 
         # ✅ Check if phone exists for RESET PASSWORD purpose
         if purpose == 'reset_password':
+            from .models import Customer
             customer_exists = Customer.objects.filter(phone=phone).exists()
             staff_exists = Staff.objects.filter(phone=phone).exists()
-
             if not customer_exists and not staff_exists:
                 raise serializers.ValidationError({
-                    'phone': 'Số điện thoại chưa được đăng ký trong hệ thống.'
+                    'phone': 'Số điện thoại chưa đăng ký trong hệ thống.'
                 })
         
         # Generate 6-digit OTP
@@ -198,111 +201,6 @@ class VerifyOTPSerializer(serializers.Serializer):
         data['otp'] = otp
         data['customer'] = customer
         return data
-
-
-class ResetPasswordWithOTPSerializer(serializers.Serializer):
-    """Đổi mật khẩu bằng OTP (quên mật khẩu)"""
-    phone = serializers.CharField(max_length=20)
-    otp_code = serializers.CharField(max_length=6)
-    new_password = serializers.CharField(max_length=128, min_length=6, write_only=True)
-    confirm_password = serializers.CharField(max_length=128, min_length=6, write_only=True, required=False, allow_blank=True)
-
-    def validate_phone(self, value):
-        if not value.startswith('0') or len(value) not in [10, 11]:
-            raise serializers.ValidationError("Số điện thoại không hợp lệ")
-        return value
-
-    def validate_new_password(self, value):
-        if len(value) < 6:
-            raise serializers.ValidationError("Mật khẩu mới phải có ít nhất 6 ký tự")
-        return value
-
-    def validate(self, data):
-        phone = data['phone']
-        otp_code = data['otp_code']
-        new_password = data['new_password']
-        confirm_password = data.get('confirm_password')
-
-        if confirm_password and new_password != confirm_password:
-            raise serializers.ValidationError({"confirm_password": "Xác nhận mật khẩu không khớp"})
-
-        otp = OTP.objects.filter(
-            phone=phone,
-            otp_code=otp_code,
-            purpose='reset_password',
-            is_verified=False,
-            expires_at__gt=timezone.now()
-        ).first()
-
-        if not otp:
-            raise serializers.ValidationError({"otp_code": "OTP không hợp lệ hoặc đã hết hạn"})
-
-        customer = Customer.objects.filter(phone=phone).first()
-        staff_qs = Staff.objects.filter(phone=phone)
-
-        target_user = None
-        if customer:
-            target_user = customer.user
-        elif staff_qs.exists():
-            if staff_qs.count() > 1:
-                raise serializers.ValidationError({"phone": "Số điện thoại đang gắn nhiều tài khoản nhân viên"})
-            target_user = staff_qs.first().user
-
-        if not target_user:
-            raise serializers.ValidationError({"phone": "Không tìm thấy tài khoản tương ứng"})
-
-        data['otp'] = otp
-        data['target_user'] = target_user
-        return data
-
-    def save(self):
-        otp = self.validated_data['otp']
-        target_user = self.validated_data['target_user']
-        new_password = self.validated_data['new_password']
-
-        target_user.set_password(new_password)
-        target_user.save(update_fields=['password'])
-
-        otp.is_verified = True
-        otp.verified_at = timezone.now()
-        otp.save(update_fields=['is_verified', 'verified_at'])
-
-        return target_user
-
-
-class ChangePasswordSerializer(serializers.Serializer):
-    """Đổi mật khẩu khi đã đăng nhập"""
-    old_password = serializers.CharField(max_length=128, write_only=True)
-    new_password = serializers.CharField(max_length=128, min_length=6, write_only=True)
-
-    def validate_new_password(self, value):
-        if len(value) < 6:
-            raise serializers.ValidationError("Mật khẩu mới phải có ít nhất 6 ký tự")
-        return value
-
-    def validate(self, data):
-        request = self.context.get('request')
-        user = getattr(request, 'user', None)
-
-        if not user or not user.is_authenticated:
-            raise serializers.ValidationError({"detail": "Bạn cần đăng nhập để đổi mật khẩu"})
-
-        if not user.check_password(data['old_password']):
-            raise serializers.ValidationError({"old_password": "Mật khẩu cũ không chính xác"})
-
-        if data['old_password'] == data['new_password']:
-            raise serializers.ValidationError({"new_password": "Mật khẩu mới phải khác mật khẩu cũ"})
-
-        data['user'] = user
-        return data
-
-    def save(self):
-        user = self.validated_data['user']
-        new_password = self.validated_data['new_password']
-
-        user.set_password(new_password)
-        user.save(update_fields=['password'])
-        return user
 
 
 # ========================================
@@ -470,9 +368,23 @@ class OrderSerializer(serializers.ModelSerializer):
     pickup_address = serializers.CharField(required=False, allow_blank=True, allow_null=True)
     pickup_lat = serializers.DecimalField(max_digits=10, decimal_places=8, required=False, allow_null=True)
     pickup_lng = serializers.DecimalField(max_digits=11, decimal_places=8, required=False, allow_null=True)
+
+    @staticmethod
+    def _safe_decimal(value):
+        """Chuẩn hóa mọi numeric input về Decimal để tránh lỗi Decimal + float."""
+        if value is None:
+            return Decimal('0')
+        if isinstance(value, Decimal):
+            return value
+        try:
+            return Decimal(str(value))
+        except (InvalidOperation, ValueError, TypeError):
+            return Decimal('0')
     
     def get_total_amount(self, obj):
-        total = obj.estimated_amount + obj.additional_amount
+        estimated_amount = self._safe_decimal(getattr(obj, 'estimated_amount', None))
+        additional_amount = self._safe_decimal(getattr(obj, 'additional_amount', None))
+        total = estimated_amount + additional_amount
         return f"{total:.2f}"
     
     def get_fees(self, obj):
@@ -1176,12 +1088,10 @@ class VehicleReturnFinalizeSerializer(serializers.Serializer):
     )
     
     # === NHÓM G: CHỮ KÝ KHÁCH HÀNG ===
-    # Không bắt buộc vì đã được lưu ở bước complete-vehicle-returned trước đó
     customer_signature = serializers.CharField(
-        required=False,
-        allow_blank=True,
-        allow_null=True,
-        help_text='Chữ ký khách hàng (base64 hoặc data:image/png;base64,...) - Không bắt buộc nếu đã gọi complete-vehicle-returned'
+        required=True,  # BẮT BUỘC
+        allow_blank=False,
+        help_text='Chữ ký khách hàng (base64 hoặc data:image/png;base64,...) (BẮT BUỘC)'
     )
     
     # REMOVED: vehicle_insurance_url (không dùng nữa)
@@ -1203,32 +1113,6 @@ class VehicleReturnFinalizeSerializer(serializers.Serializer):
             except json.JSONDecodeError:
                 raise serializers.ValidationError("other_documents_urls phải là JSON string hợp lệ. VD: '[\\\"url1.jpg\\\", \\\"url2.pdf\\\"]'")
         return value
-
-
-class VehicleReturnHandoverChecklistItemSerializer(serializers.Serializer):
-    """Validate 1 hạng mục trong bảng 9 hạng mục bàn giao."""
-    notPassed = serializers.BooleanField(required=True)
-    passed = serializers.BooleanField(required=True)
-    quantity = serializers.CharField(required=True, allow_blank=True, max_length=50)
-    note = serializers.CharField(required=True, allow_blank=True, max_length=2000)
-
-    def validate(self, attrs):
-        if attrs['notPassed'] and attrs['passed']:
-            raise serializers.ValidationError('notPassed và passed không được cùng true')
-        return attrs
-
-
-class VehicleReturnHandoverChecklistSerializer(serializers.Serializer):
-    """Validate toàn bộ 9 hạng mục hiện trạng thực tế của xe."""
-    scratches = VehicleReturnHandoverChecklistItemSerializer(required=True)
-    tires = VehicleReturnHandoverChecklistItemSerializer(required=True)
-    brakes = VehicleReturnHandoverChecklistItemSerializer(required=True)
-    battery = VehicleReturnHandoverChecklistItemSerializer(required=True)
-    carpet = VehicleReturnHandoverChecklistItemSerializer(required=True)
-    inspection = VehicleReturnHandoverChecklistItemSerializer(required=True)
-    insurance = VehicleReturnHandoverChecklistItemSerializer(required=True)
-    smoke = VehicleReturnHandoverChecklistItemSerializer(required=True)
-    lights = VehicleReturnHandoverChecklistItemSerializer(required=True)
 
 
 # ========================================

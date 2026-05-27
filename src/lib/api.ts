@@ -363,7 +363,7 @@ export const autoLogin = async (): Promise<boolean> => {
     if (!response.ok) {
       console.error("❌ [AUTO-LOGIN] Failed:", response.statusText);
       console.error(
-        "❌ [AUTO-LOGIN] Check if Django server is running on http://14.224.210.210:8008",
+        "❌ [AUTO-LOGIN] Check if Django server is running on http://14.224.210.210:8008/",
       );
       console.error("❌ [AUTO-LOGIN] Check if you created admin user");
       console.error("❌ [AUTO-LOGIN] Run: python manage.py createsuperuser");
@@ -429,25 +429,13 @@ export interface LoginResponse {
 
 export interface CustomerOTPRequest {
   phone: string;
-  purpose: "register" | "login" | "reset_password";
+  purpose: "register" | "login";
 }
 
 export interface CustomerOTPResponse {
   success: boolean;
   message: string;
   debug_otp?: string; // Only in development
-}
-
-export interface ResetPasswordWithOTPRequest {
-  phone: string;
-  otp_code: string;
-  new_password: string;
-  confirm_password?: string;
-}
-
-export interface ResetPasswordWithOTPResponse {
-  success: boolean;
-  message: string;
 }
 
 export interface CustomerRegisterRequest {
@@ -592,45 +580,6 @@ export const authAPI = {
   },
 
   /**
-   * Reset password with OTP (forgot password flow)
-   */
-  resetPasswordWithOTP: async (
-    data: ResetPasswordWithOTPRequest,
-  ): Promise<ResetPasswordWithOTPResponse> => {
-    console.log("🔐 [AUTH] Reset password with OTP:", { phone: data.phone });
-
-    const response = await fetch(`${API_BASE_URL}/auth/reset-password/`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(data),
-    });
-
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      console.error("❌ [AUTH] Reset password failed:", errorData);
-
-      if (errorData.otp_code?.[0]) {
-        throw new Error(errorData.otp_code[0]);
-      }
-      if (errorData.phone?.[0]) {
-        throw new Error(errorData.phone[0]);
-      }
-      if (errorData.new_password?.[0]) {
-        throw new Error(errorData.new_password[0]);
-      }
-      if (errorData.confirm_password?.[0]) {
-        throw new Error(errorData.confirm_password[0]);
-      }
-
-      throw new Error(
-        errorData.message || errorData.detail || "Đổi mật khẩu thất bại",
-      );
-    }
-
-    return response.json();
-  },
-
-  /**
    * Login customer with OTP (UNIFIED LOGIN)
    */
   customerLogin: async (
@@ -675,9 +624,7 @@ export const authAPI = {
     }
 
     if (!accessToken) {
-      throw new Error(
-        "Đăng nhập thành công nhưng backend chưa trả token xác thực",
-      );
+      throw new Error("Đăng nhập thành công nhưng backend chưa trả token xác thực");
     }
 
     return result;
@@ -771,9 +718,7 @@ export const authAPI = {
     }
 
     if (!accessToken) {
-      throw new Error(
-        "Đăng nhập thành công nhưng backend chưa trả token xác thực",
-      );
+      throw new Error("Đăng nhập thành công nhưng backend chưa trả token xác thực");
     }
 
     return result;
@@ -1127,13 +1072,7 @@ export interface CreatePaymentRequest {
   order_id?: number;
   method?: "QR" | "VNPAY" | "CASH";
   payment_target?: "wallet_topup" | "order" | "additional_cost";
-  payment_method?:
-    | "cash"
-    | "bank_transfer"
-    | "vietqr"
-    | "momo"
-    | "zalopay"
-    | "vnpay";
+  payment_method?: "cash" | "bank_transfer" | "vietqr" | "momo" | "zalopay" | "vnpay";
   description?: string;
 }
 
@@ -1779,9 +1718,7 @@ export const walletAPI = {
   },
 
   getStatement: async (limit = 20): Promise<WalletStatementResponse> => {
-    return apiCall<WalletStatementResponse>(
-      `/customers/wallet/statement/?limit=${limit}`,
-    );
+    return apiCall<WalletStatementResponse>(`/customers/wallet/statement/?limit=${limit}`);
   },
 };
 

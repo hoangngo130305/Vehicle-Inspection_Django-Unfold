@@ -1423,7 +1423,7 @@ class OrderAdmin(admin.ModelAdmin):
     ]
     readonly_fields = [
         'order_code', 'created_at', 'updated_at', 'confirmed_at', 'cancelled_at',
-        'contract_document_created_at', 'handover_document_created_at', 'payment_completed_at'
+        'contract_document_created_at', 'payment_completed_at'
     ]
     inlines = [VehicleReceiptLogInline, OrderStatusHistoryInline, OrderChecklistInline, OrderServiceInline]
     
@@ -1452,10 +1452,6 @@ class OrderAdmin(admin.ModelAdmin):
         ('� Hợp đồng (26/03/2026)', {
             'fields': ('contract_document_pdf', 'contract_document', 'contract_document_created_at'),
             'description': 'File hợp đồng ủy quyền (.pdf) được tạo tự động từ API; giữ lại DOCX ở trường contract_document'
-        }),
-        ('📄 Hợp đồng trả xe', {
-            'fields': ('handover_document_pdf', 'handover_document', 'handover_document_created_at'),
-            'description': 'File biên bản bàn giao trả xe (.pdf/.docx) được tạo từ API complete-vehicle-returned hoặc generate-handover-docx'
         }),
         ('�🚗 Driver Location Tracking (13/03/2026)', {
             'fields': (

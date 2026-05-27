@@ -50,7 +50,6 @@ INSTALLED_APPS = [
     'drf_yasg',
     'dj_wallet',
     "api",
-    'django.contrib.humanize',
     # "shop",
 ]
 

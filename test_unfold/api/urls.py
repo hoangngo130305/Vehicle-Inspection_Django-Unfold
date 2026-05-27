@@ -32,7 +32,6 @@ urlpatterns = [
     path('auth/request-otp/', customer_request_otp, name='request-otp'),
     path('auth/verify-otp/', verify_otp, name='verify-otp'),
     path('auth/reset-password/', reset_password_with_otp, name='reset-password-with-otp'),
-    path('auth/change-password/', change_password, name='change-password'),
     
     # ========================================
     # AUTHENTICATION UTILITIES

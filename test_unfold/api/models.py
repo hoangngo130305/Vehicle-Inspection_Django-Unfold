@@ -501,21 +501,6 @@ class Order(ProductMixin, models.Model):
         help_text='File hợp đồng ủy quyền (PDF)'
     )
     contract_document_created_at = models.DateTimeField(null=True, blank=True, help_text='Thời gian tạo hợp đồng')
-
-    # ✅ NEW - HANDOVER CONTRACT DOCUMENT (Trả xe)
-    handover_document = models.FileField(
-        upload_to='contracts/',
-        null=True,
-        blank=True,
-        help_text='File biên bản bàn giao trả xe (DOCX)'
-    )
-    handover_document_pdf = models.FileField(
-        upload_to='contracts/',
-        null=True,
-        blank=True,
-        help_text='File biên bản bàn giao trả xe (PDF)'
-    )
-    handover_document_created_at = models.DateTimeField(null=True, blank=True, help_text='Thời gian tạo biên bản bàn giao trả xe')
     
     # ✅✅ NEW - PAYMENT INFO (26/03/2026)
     PAYMENT_METHOD_CHOICES = (
@@ -936,12 +921,13 @@ class VehicleReturnAdditionalCost(models.Model):
     payment_status = models.CharField(
         max_length=20,
         choices=[
-            ('PENDING', 'Chờ thanh toán'),
-            ('SUCCESS', 'Đã thanh toán'),
-            ('FAILED', 'Thất bại'),
-            ('CANCELLED', 'Đã hủy'),
+            ('pending', 'Chờ thanh toán'),
+            ('processing', 'Đang xử lý'),
+            ('paid', 'Đã thanh toán'),
+            ('failed', 'Thất bại'),
+            ('cancelled', 'Đã hủy'),
         ],
-        default='PENDING',
+        default='pending',
         help_text='Trạng thái thanh toán'
     )
     
